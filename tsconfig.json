@@ -1,0 +1,7 @@
+{
+  "extends": "@granite-js/react-native/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {}
+  }
+}
