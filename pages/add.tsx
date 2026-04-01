@@ -77,7 +77,7 @@ function AddPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <SimpleHeader title="영양제 추가" onBack={() => navigation.goBack()} />
+      <SimpleHeader title="영양제 추가" />
 
       <ScrollView
         style={styles.scroll}
@@ -284,9 +284,7 @@ function SimpleHeader({ title, onBack, rightLabel, onRight }: {
 }) {
   return (
     <View style={headerStyles.container}>
-      <TouchableOpacity onPress={onBack} style={headerStyles.side} activeOpacity={0.7}>
-        <Text style={headerStyles.back}>‹</Text>
-      </TouchableOpacity>
+      <View style={headerStyles.side} />
       <Text style={headerStyles.title}>{title}</Text>
       <TouchableOpacity onPress={onRight} style={headerStyles.side} activeOpacity={0.7}>
         <Text style={headerStyles.right}>{rightLabel ?? ''}</Text>

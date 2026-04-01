@@ -55,7 +55,7 @@ function HistoryPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <SimpleHeader title="복약 기록" onBack={() => navigation.goBack()} />
+      <SimpleHeader title="복약 기록" />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -197,9 +197,7 @@ function DayCard({
 function SimpleHeader({ title, onBack }: { title: string; onBack?: () => void }) {
   return (
     <View style={headerStyles.container}>
-      <TouchableOpacity onPress={onBack} style={headerStyles.side} activeOpacity={0.7}>
-        <Text style={headerStyles.back}>‹</Text>
-      </TouchableOpacity>
+      <View style={headerStyles.side} />
       <Text style={headerStyles.title}>{title}</Text>
       <View style={headerStyles.side} />
     </View>

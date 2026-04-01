@@ -292,9 +292,7 @@ function PresetPage() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} style={styles.backBtn}>
-          <Text style={styles.backText}>‹</Text>
-        </TouchableOpacity>
+        <View style={styles.backBtn} />
         <Text style={styles.headerTitle}>내 플랜</Text>
         <TouchableOpacity onPress={() => setShowHelp(true)} activeOpacity={0.7} style={styles.helpBtn}>
           <Text style={styles.helpBtnText}>?</Text>

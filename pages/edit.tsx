@@ -45,7 +45,7 @@ function EditPage() {
   if (!pill) {
     return (
       <SafeAreaView style={styles.container}>
-        <SimpleHeader title="영양제 수정" onBack={() => navigation.goBack()} />
+        <SimpleHeader title="영양제 수정" />
         <View style={styles.notFound}>
           <Text style={styles.notFoundText}>영양제를 찾을 수 없어요</Text>
         </View>
@@ -93,7 +93,6 @@ function EditPage() {
     <SafeAreaView style={styles.container}>
       <SimpleHeader
         title="영양제 수정"
-        onBack={() => navigation.goBack()}
         rightLabel="삭제"
         onRight={handleDelete}
       />
@@ -226,9 +225,7 @@ function SimpleHeader({ title, onBack, rightLabel, onRight }: {
 }) {
   return (
     <View style={headerStyles.container}>
-      <TouchableOpacity onPress={onBack} style={headerStyles.side} activeOpacity={0.7}>
-        <Text style={headerStyles.back}>‹</Text>
-      </TouchableOpacity>
+      <View style={headerStyles.side} />
       <Text style={headerStyles.title}>{title}</Text>
       <TouchableOpacity onPress={onRight} style={headerStyles.side} activeOpacity={0.7}>
         <Text style={[headerStyles.right, rightLabel === '삭제' && { color: '#EF4444' }]}>{rightLabel ?? ''}</Text>

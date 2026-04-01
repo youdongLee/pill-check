@@ -294,12 +294,21 @@ function HomePage() {
               {allDone && !todayStamped && (
                 <TouchableOpacity
                   style={[styles.stampActionBtn, !adLoaded && styles.stampActionBtnDisabled]}
-                  onPress={() => showRewardAd('stamp')}
+                  onPress={() => {
+                    Alert.alert(
+                      '오늘의 도장 받기',
+                      '짧은 광고를 보고 오늘의 복약 도장을 받아보세요!',
+                      [
+                        { text: '취소', style: 'cancel' },
+                        { text: '광고 보고 도장 받기', onPress: () => showRewardAd('stamp') },
+                      ],
+                    );
+                  }}
                   disabled={!adLoaded}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.stampActionBtnText}>
-                    {adLoaded ? '🎯 오늘 복약 완료! 도장 받기' : '광고 준비 중...'}
+                    {adLoaded ? '🎯 광고 보고 오늘 도장 받기' : '광고 준비 중...'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -311,12 +320,21 @@ function HomePage() {
               {canClaimStreakReward && (
                 <TouchableOpacity
                   style={[styles.streakActionBtn, !adLoaded && styles.stampActionBtnDisabled]}
-                  onPress={() => showRewardAd('streak')}
+                  onPress={() => {
+                    Alert.alert(
+                      '7일 연속 달성!',
+                      '짧은 광고를 보고 토스포인트 5p를 받아보세요!',
+                      [
+                        { text: '취소', style: 'cancel' },
+                        { text: '광고 보고 포인트 받기', onPress: () => showRewardAd('streak') },
+                      ],
+                    );
+                  }}
                   disabled={!adLoaded}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.streakActionBtnText}>
-                    {adLoaded ? '🏆 7일 연속 달성! 토스포인트 받기' : '광고 준비 중...'}
+                    {adLoaded ? '🏆 7일 연속! 광고 보고 토스포인트 받기' : '광고 준비 중...'}
                   </Text>
                 </TouchableOpacity>
               )}

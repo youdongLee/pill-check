@@ -279,7 +279,6 @@ function ManagePage() {
     <SafeAreaView style={styles.container}>
       <SimpleHeader
         title="영양제 관리"
-        onBack={() => navigation.goBack()}
       />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -732,9 +731,7 @@ function SimpleHeader({ title, onBack, rightLabel, onRight }: {
 }) {
   return (
     <View style={headerStyles.container}>
-      <TouchableOpacity onPress={onBack} style={headerStyles.side} activeOpacity={0.7}>
-        <Text style={headerStyles.back}>‹</Text>
-      </TouchableOpacity>
+      <View style={headerStyles.side} />
       <Text style={headerStyles.title}>{title}</Text>
       <TouchableOpacity onPress={onRight} style={headerStyles.side} activeOpacity={0.7}>
         <Text style={headerStyles.right}>{rightLabel ?? ''}</Text>
