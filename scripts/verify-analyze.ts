@@ -6,6 +6,8 @@ import { analyze, recommendTiming, TIMING_LABEL } from '../src/analyze';
 import { PRODUCTS, findProduct, guessProductByName } from '../data/products';
 import { INGREDIENTS, findIngredient } from '../data/ingredients';
 import { CONCERNS, FUNCTION_CLAIMS } from '../data/concerns';
+import { diagnose, notCovered } from '../src/diagnose';
+import { AGE_BANDS, bandOf, referenceFor } from '../data/rda';
 import type { Pill, SlotKey } from '../data/types';
 
 let pass = 0;
@@ -167,7 +169,41 @@ console.log('\n[10] 고민별 찾기 — 심사에서 가장 위험한 데이터
   check('기능성 문구에 치료·예방 표현이 없다', bad.length === 0, bad.map(([k]) => k).join(', '));
 }
 
-console.log('\n[11] 빈 입력 방어');
+console.log('\n[11] 나이·성별 진단 — 이 앱의 새 핵심');
+{
+  check('나이 구간이 5개', AGE_BANDS.length === 5);
+  check('55세 → 50~64세 구간', bandOf(55).key === '50');
+  check('80세 → 75세 이상 구간', bandOf(80).key === '75');
+  check('20세 → 19~29세 구간', bandOf(20).key === '19');
+  // 폐경 이후 여성은 칼슘 기준이 올라간다
+  check('50대 여성 칼슘 기준이 30대보다 높다',
+    referenceFor('female', 55).calcium > referenceFor('female', 35).calcium,
+    `${referenceFor('female', 35).calcium} → ${referenceFor('female', 55).calcium}`);
+  check('65세 이상 비타민D 기준이 올라간다', referenceFor('female', 70).vitD === 15);
+
+  // 종합비타민 하나만 먹는 55세 여성
+  const one = [makePill('multi', ['morning'])];
+  const d = diagnose(one, 'female', 55);
+  check('진단 결과에 항목이 있다', d.items.length > 0);
+  const vitC = d.items.find((i) => i.key === 'vitC');
+  check('비타민C 기준 대비 100% (100mg / 100mg)', vitC?.percent === 100, `실제=${vitC?.percent}%`);
+  const cal = d.items.find((i) => i.key === 'calcium');
+  check('종합비타민만으로는 칼슘이 안 들어온다', cal === undefined);
+  check('안 들어오는 성분 목록에 칼슘이 있다', notCovered(one, 'female', 55).some((m) => m.key === 'calcium'));
+
+  // 마그네슘·철은 식사로 챙기는 쪽이라 "부족"으로 세지 않는다
+  check('철분은 부족 목록에서 제외된다', !notCovered(one, 'female', 55).some((m) => m.key === 'iron'));
+  check('요오드는 부족 목록에서 제외된다', !notCovered(one, 'female', 55).some((m) => m.key === 'iodine'));
+
+  // 상한 초과는 진단에서도 분명히 잡아야 한다
+  const over = diagnose([makePill('magnesium', ['morning', 'bedtime'])], 'female', 55);
+  check('상한 초과가 over 로 분류된다', over.over.some((o) => o.key === 'magnesium'));
+  check('요약 문장이 상한 초과를 먼저 말한다', over.headline.includes('마그네슘'));
+
+  check('영양제가 없으면 진단도 비어 있다', diagnose([], 'female', 55).items.length === 0);
+}
+
+console.log('\n[12] 빈 입력 방어');
 {
   const { findings, totals } = analyze([]);
   check('영양제가 없으면 결과가 비어 있다', findings.length === 0 && totals.length === 0);

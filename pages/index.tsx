@@ -6,44 +6,46 @@ import {
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
 import { useStamps } from '../stores/StampContext';
+import { useProfile } from '../stores/ProfileContext';
+import { AGE_BANDS } from '../data/rda';
 import { SLOTS, type SlotKey } from '../data/types';
 import { todayStr } from '../data/utils';
-import { analyze, summarize } from '../src/analyze';
+import { analyze } from '../src/analyze';
+import { diagnose, DIAGNOSE_NOTE, notCovered } from '../src/diagnose';
 import { AD_IDS, PROMO } from '../src/ads';
 import { grantReward } from '../src/reward';
 import { useRewardAd } from '../src/useRewardAd';
 import { LinkedAppPair } from '../src/LinkedAppPair';
 import { COMPLETE_PAIR, pairForDate } from '../src/linkedApps';
+import { Scale } from '../src/Scale';
+import { Empty } from '../src/ui';
 import {
-  BG, DAILY_BONUS, GOLD_BG, GOLD_DARK, LINE, PAD, PRIMARY, PRIMARY_DARK, STREAK_BONUS,
-  STREAK_DAYS, T_HERO, T_SMALL, T_SUB, TEXT, TEXT_MUTED, TEXT_SUB,
+  BG, DAILY_BONUS, GOLD_BG, GOLD_DARK, LINE, PAD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT,
+  STREAK_BONUS, STREAK_DAYS, T_SMALL, T_SUB, TEXT, TEXT_MUTED, TEXT_SUB, WARN,
 } from '../src/theme';
 
 export const Route = createRoute('/', { component: HomePage });
 
-/** 이 알수 이하로 남으면 알려준다 */
-const LOW_STOCK = 10;
-/** 한 줄에 이름을 몇 개까지 늘어놓을지 */
-const NAME_LIMIT = 3;
+/** 결과지에 처음 펼쳐 보여줄 항목 수 */
+const PREVIEW = 6;
 
 function HomePage() {
   const navigation = Route.useNavigation();
-  const { pills, todayRecord, loading, toggleIntake, completeSlot } = usePills();
+  const { pills, todayRecord, loading, completeSlot } = usePills();
+  const { profile, loading: profileLoading, age } = useProfile();
   const {
-    todayCompleted, currentStreak,
-    dailyBonusUnclaimed, dailyStampReady, streakBonusAvailable, streakStampReady,
+    todayCompleted, currentStreak, dailyBonusUnclaimed, dailyStampReady,
+    streakBonusAvailable, streakStampReady,
     markTodayComplete, issueDailyStamp, claimDailyBonus, issueStreakStamp, claimStreakBonus,
   } = useStamps();
   const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
 
   const [showAll, setShowAll] = useState(false);
 
-  const onIssueDaily = () => show(async () => { await issueDailyStamp(); });
   const onClaimDaily = async () => {
     const ok = await claimDailyBonus();
     if (ok) await grantReward(PROMO.daily, DAILY_BONUS);
   };
-  const onIssueStreak = () => show(async () => { await issueStreakStamp(); });
   const onClaimStreak = async () => {
     const ok = await claimStreakBonus();
     if (ok) await grantReward(PROMO.streak, STREAK_BONUS);
@@ -57,12 +59,11 @@ function HomePage() {
       }).filter((g) => g.total > 0),
     [todayRecord.intakes],
   );
-
   const takenCount = todayRecord.intakes.filter((i) => i.taken).length;
   const totalCount = todayRecord.intakes.length;
   const allDone = totalCount > 0 && takenCount === totalCount;
 
-  const current = useMemo(() => {
+  const nextSlot = useMemo(() => {
     const h = new Date().getHours();
     const order: SlotKey[] =
       h < 11 ? ['morning', 'lunch', 'evening', 'bedtime']
@@ -76,10 +77,11 @@ function HomePage() {
     return null;
   }, [groups]);
 
-  const { findings } = useMemo(() => analyze(pills), [pills]);
-  const check = summarize(findings);
-  const lowStock = useMemo(
-    () => pills.filter((p) => p.remaining !== undefined && p.remaining <= LOW_STOCK * Math.max(1, p.slots.length)),
+  const sex = profile?.sex ?? 'female';
+  const result = useMemo(() => diagnose(pills, sex, age), [pills, sex, age]);
+  const missing = useMemo(() => notCovered(pills, sex, age), [pills, sex, age]);
+  const conflicts = useMemo(
+    () => analyze(pills).findings.filter((f) => f.level === 'conflict' || f.level === 'duplicate'),
     [pills],
   );
 
@@ -102,175 +104,173 @@ function HomePage() {
     return () => loop.stop();
   }, [dailyStampReady, streakStampReady, finger]);
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
-      <SafeAreaView style={styles.loading}>
+      <SafeAreaView style={s.loading}>
         <ActivityIndicator size="large" color={PRIMARY} />
       </SafeAreaView>
     );
   }
 
+  // 나이·성별을 모르면 진단이 성립하지 않는다 — 그것부터 묻는다
+  if (!profile) {
+    return (
+      <SafeAreaView style={s.container}>
+        <View style={s.intro}>
+          <Text style={s.introTitle}>드시는 영양제,{'\n'}괜찮은지 봐드려요</Text>
+          <Text style={s.introDesc}>
+            나이·성별 기준으로 지금 드시는 영양제가{'\n'}어디쯤 있는지 알려드려요
+          </Text>
+          <TouchableOpacity style={s.introBtn} onPress={() => navigation.navigate('/setup')} activeOpacity={0.85}>
+            <Text style={s.introBtnText}>시작하기</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const bandLabel = AGE_BANDS.find((b) => b.key === profile.band)?.label ?? '';
+  const who = `${bandLabel} ${profile.sex === 'female' ? '여성' : '남성'}`;
+  const shown = showAll ? result.items : result.items.slice(0, PREVIEW);
   const reward =
     dailyStampReady ? { onPress: onClaimDaily, label: `👆 눌러서 ${DAILY_BONUS}원 받기` }
     : streakStampReady ? { onPress: onClaimStreak, label: `👆 눌러서 ${STREAK_BONUS}원 받기` }
     : null;
   const adReady = adLoaded && !playing;
   const bonus =
-    streakBonusAvailable ? { onPress: onIssueStreak, label: `🏆 ${STREAK_DAYS}일 연속! 광고 보고 ${STREAK_BONUS}원` }
-    : allDone && dailyBonusUnclaimed ? { onPress: onIssueDaily, label: `광고 보고 ${DAILY_BONUS}원 받기` }
+    streakBonusAvailable ? { onPress: () => show(issueStreakStamp), label: `🏆 ${STREAK_DAYS}일 연속! 광고 보고 ${STREAK_BONUS}원` }
+    : allDone && dailyBonusUnclaimed ? { onPress: () => show(issueDailyStamp), label: `광고 보고 ${DAILY_BONUS}원 받기` }
     : null;
 
-  const pending = current ? current.intakes.filter((i) => !i.taken) : [];
-  const names = pending.slice(0, NAME_LIMIT).map((i) => i.pillName).join(' · ');
-  const moreCount = pending.length - NAME_LIMIT;
-
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.ad}>
+    <SafeAreaView style={s.container}>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <View style={s.ad}>
           <InlineAd adGroupId={AD_IDS.homeBanner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
         </View>
 
-        {/* ── 화면 = 지금 할 일 하나. 카드에 담지 않는다 ── */}
         {pills.length === 0 ? (
-          <View style={styles.stage}>
-            <Text style={styles.bigEmoji}>💊</Text>
-            <Text style={styles.stageTitle}>영양제를 넣어주세요</Text>
-            <TouchableOpacity style={styles.action} onPress={() => navigation.navigate('/add')} activeOpacity={0.85}>
-              <Text style={styles.actionText}>영양제 넣기</Text>
-            </TouchableOpacity>
-          </View>
-        ) : current ? (
-          <View style={styles.stage}>
-            <Text style={styles.bigEmoji}>{current.emoji}</Text>
-            <Text style={styles.when}>{current.label}</Text>
-            <Text style={styles.names}>
-              {names}{moreCount > 0 ? ` 외 ${moreCount}개` : ''}
-            </Text>
-            <TouchableOpacity style={styles.action} onPress={() => completeSlot(current.key)} activeOpacity={0.85}>
-              <Text style={styles.actionText}>먹었어요</Text>
-            </TouchableOpacity>
-          </View>
+          <Empty
+            emoji="💊"
+            title="영양제를 넣어주세요"
+            desc={`${who} 기준으로\n지금 드시는 게 어디쯤인지 봐드려요`}
+            action={{ label: '영양제 넣기', onPress: () => navigation.navigate('/add') }}
+          />
         ) : (
-          /* 완료: 할 일이 없으니 한 줄이면 된다 */
-          <Text style={styles.doneLine}>
+          <>
+            {/* ── 결과지 머리 ── */}
+            <View style={s.head}>
+              <TouchableOpacity onPress={() => navigation.navigate('/setup')} activeOpacity={0.7}>
+                <Text style={s.who}>{who} 기준 ›</Text>
+              </TouchableOpacity>
+              <Text style={s.verdict}>{result.headline}</Text>
+            </View>
+
+            {/* ── 막대 스케일 = 이 화면의 주인공 ── */}
+            <View style={s.scales}>
+              <View style={s.legend}>
+                <Text style={s.legendText}>영양제로 들어오는 양</Text>
+                <Text style={s.legendMark}>│ 기준</Text>
+              </View>
+              {shown.map((item) => (
+                <Scale
+                  key={item.key}
+                  name={item.name}
+                  amount={item.intake}
+                  unit={item.unit}
+                  percent={item.percent}
+                  tone={item.level}
+                  caption={
+                    item.level === 'over'
+                      ? `상한 ${item.upperPercent}% — ${item.sources.join(' · ')}`
+                      : item.percent === null
+                        ? '기준치가 정해지지 않은 성분이에요'
+                        : undefined
+                  }
+                />
+              ))}
+              {result.items.length > PREVIEW && (
+                <TouchableOpacity onPress={() => setShowAll(!showAll)} activeOpacity={0.7}>
+                  <Text style={s.more}>
+                    {showAll ? '접기 ▲' : `나머지 ${result.items.length - PREVIEW}가지 ▼`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <Text style={s.note}>{DIAGNOSE_NOTE}</Text>
+            </View>
+
+            {/* 넘친 것 — 유일하게 분명히 말할 수 있는 경고 */}
+            {result.over.length > 0 && (
+              <View style={s.warnBox}>
+                <Text style={s.warnTitle}>상한을 넘긴 성분</Text>
+                {result.over.map((o) => (
+                  <Text key={o.key} style={s.warnLine}>
+                    {o.name} 하루 {o.intake}{o.unit} · 상한의 {o.upperPercent}%
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {/* 겹치는 것 */}
+            {conflicts.length > 0 && (
+              <TouchableOpacity style={s.line} onPress={() => navigation.navigate('/manage')} activeOpacity={0.7}>
+                <Text style={s.lineText}>{conflicts[0].title}</Text>
+                <Text style={s.lineMore}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* 아직 안 들어오는 것 — 권하지 않고 사실만 */}
+            {missing.length > 0 && (
+              <View style={s.missing}>
+                <Text style={s.missingTitle}>영양제로는 안 들어오는 것</Text>
+                <Text style={s.missingList}>{missing.map((m) => m.name).join(' · ')}</Text>
+                <Text style={s.missingNote}>식사로 챙기시면 돼요. 필요하면 아래에서 찾아보세요.</Text>
+              </View>
+            )}
+          </>
+        )}
+
+        <View style={s.ad}>
+          <InlineAd adGroupId={AD_IDS.homeFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+
+        {/* ── 오늘 챙기기 — 주인공에서 내렸다 ── */}
+        {nextSlot && (
+          <View style={s.today}>
+            <Text style={s.todayLabel}>{nextSlot.emoji} {nextSlot.label}에 드실 것</Text>
+            <Text style={s.todayNames}>
+              {nextSlot.intakes.filter((i) => !i.taken).map((i) => i.pillName).join(' · ')}
+            </Text>
+            <TouchableOpacity style={s.todayBtn} onPress={() => completeSlot(nextSlot.key)} activeOpacity={0.85}>
+              <Text style={s.todayBtnText}>먹었어요</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {!nextSlot && totalCount > 0 && (
+          <Text style={s.todayDone}>
             ✓ 오늘 다 드셨어요{currentStreak > 0 ? ` · ${currentStreak}일 연속` : ''}
           </Text>
         )}
 
-        {/* 진행 — 점만 */}
-        {totalCount > 0 && (
-          <View style={styles.dots}>
-            {groups.map((g) => (
-              <View key={g.key} style={[styles.dot, g.done === g.total && styles.dotDone]} />
-            ))}
-            <Text style={styles.dotText}>{takenCount}/{totalCount}</Text>
-          </View>
-        )}
-
-        {/* 받을 돈 — 있으면 여기 하나만 */}
         {reward ? (
-          <TouchableOpacity style={styles.money} onPress={reward.onPress} activeOpacity={0.85}>
-            <Animated.Text style={[styles.moneyText, { transform: [{ translateY: finger }] }]}>
-              {reward.label}
-            </Animated.Text>
+          <TouchableOpacity style={s.money} onPress={reward.onPress} activeOpacity={0.85}>
+            <Animated.Text style={[s.moneyText, { transform: [{ translateY: finger }] }]}>{reward.label}</Animated.Text>
           </TouchableOpacity>
         ) : bonus ? (
-          <TouchableOpacity
-            style={[styles.money, !adReady && styles.moneyOff]}
-            onPress={bonus.onPress}
-            disabled={!adReady}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.moneyText}>{playing ? '광고 재생 중...' : adLoaded ? bonus.label : '광고 준비 중...'}</Text>
+          <TouchableOpacity style={[s.money, !adReady && s.moneyOff]} onPress={bonus.onPress} disabled={!adReady} activeOpacity={0.85}>
+            <Text style={s.moneyText}>{playing ? '광고 재생 중...' : adLoaded ? bonus.label : '광고 준비 중...'}</Text>
           </TouchableOpacity>
         ) : null}
 
-        {/* 알림 — 텍스트 한 줄 */}
-        {check && (
-          <TouchableOpacity onPress={() => navigation.navigate('/check')} activeOpacity={0.7}>
-            <Text style={styles.alert}>⚠️ {check.headline} ›</Text>
-          </TouchableOpacity>
-        )}
-        {lowStock.length > 0 && (
-          <TouchableOpacity onPress={() => navigation.navigate('/manage')} activeOpacity={0.7}>
-            <Text style={styles.alert}>
-              {lowStock.length === 1
-                ? `${lowStock[0].name} ${lowStock[0].remaining}알 남음 ›`
-                : `${lowStock[0].name} 외 ${lowStock.length - 1}개 얼마 안 남음 ›`}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.ad}>
-          <InlineAd adGroupId={AD_IDS.homeFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        {/* 이 앱이 해주는 나머지 */}
+        <View style={s.doors}>
+          <Door emoji="🔎" title="고민별로 찾아보기" sub="무릎·눈·피로… 어떤 성분이 도움되는지" onPress={() => navigation.navigate('/find')} />
+          <Door emoji="📋" title="병원에서 보여주기" sub="지금 드시는 것 한 장으로" onPress={() => navigation.navigate('/card')} />
+          <Door emoji="💊" title="내 영양제" sub={`${pills.length}개 · 넣고 고치기`} onPress={() => navigation.navigate('/manage')} />
+          <Door emoji="📅" title="복용 기록" sub="이번 주에 놓친 것" onPress={() => navigation.navigate('/history')} />
         </View>
 
-        {/* 전체 목록 — 필요할 때만 편다 */}
-        {groups.length > 0 && (
-          <>
-            <TouchableOpacity onPress={() => setShowAll(!showAll)} activeOpacity={0.7}>
-              <Text style={styles.fold}>오늘 전체 {showAll ? '접기 ▲' : '보기 ▼'}</Text>
-            </TouchableOpacity>
-            {showAll &&
-              groups.map((g) => (
-                <View key={g.key} style={styles.block}>
-                  <Text style={styles.blockTitle}>{g.emoji} {g.label}</Text>
-                  {g.intakes.map((i) => (
-                    <TouchableOpacity
-                      key={`${i.pillId}-${i.slot}`}
-                      style={styles.line}
-                      onPress={() => toggleIntake(i.pillId, i.slot)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.lineMark}>{i.taken ? '✅' : '⬜️'}</Text>
-                      <Text style={[styles.lineName, i.taken && styles.lineDone]}>{i.pillName}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
-          </>
-        )}
-
-        {/* 이 앱이 해주는 일 — 체크 말고 나머지 */}
-        <View style={styles.doors}>
-          <TouchableOpacity style={styles.door} onPress={() => navigation.navigate('/find')} activeOpacity={0.7}>
-            <Text style={styles.doorEmoji}>🔎</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.doorTitle}>고민별로 찾아보기</Text>
-              <Text style={styles.doorSub}>무릎·눈·피로… 어떤 성분이 도움되는지</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.door} onPress={() => navigation.navigate('/card')} activeOpacity={0.7}>
-            <Text style={styles.doorEmoji}>📋</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.doorTitle}>병원에서 보여주기</Text>
-              <Text style={styles.doorSub}>지금 드시는 것 한 장으로</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* 메뉴 — 글자 링크로 */}
-        <View style={styles.menu}>
-          <TouchableOpacity onPress={() => navigation.navigate('/add')} activeOpacity={0.7}>
-            <Text style={styles.menuMain}>+ 영양제 넣기</Text>
-          </TouchableOpacity>
-          <View style={styles.menuRow}>
-            <TouchableOpacity onPress={() => navigation.navigate('/manage')} activeOpacity={0.7}>
-              <Text style={styles.menuLink}>내 영양제</Text>
-            </TouchableOpacity>
-            <Text style={styles.menuDiv}>·</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('/check')} activeOpacity={0.7}>
-              <Text style={styles.menuLink}>성분 점검</Text>
-            </TouchableOpacity>
-            <Text style={styles.menuDiv}>·</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('/history')} activeOpacity={0.7}>
-              <Text style={styles.menuLink}>복용 기록</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.promo}>
+        <View style={s.promo}>
           <LinkedAppPair
             title={todayCompleted ? '🎉 오늘 완주 기념' : '이런 앱도 있어요'}
             apps={todayCompleted ? COMPLETE_PAIR : pairForDate(todayStr())}
@@ -281,70 +281,83 @@ function HomePage() {
   );
 }
 
-const styles = StyleSheet.create({
+function Door({ emoji, title, sub, onPress }: { emoji: string; title: string; sub: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={s.door} onPress={onPress} activeOpacity={0.7}>
+      <Text style={s.doorEmoji}>{emoji}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={s.doorTitle}>{title}</Text>
+        <Text style={s.doorSub}>{sub}</Text>
+      </View>
+      <Text style={s.doorArrow}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
+const s = StyleSheet.create({
   loading: { flex: 1, backgroundColor: BG, justifyContent: 'center', alignItems: 'center' },
   container: { flex: 1, backgroundColor: BG },
   scroll: { paddingBottom: 30 },
   ad: { width: '100%', minHeight: 96, overflow: 'hidden' },
 
-  // 카드가 아니라 화면 그 자체. 테두리도 배경도 없다.
-  stage: { alignItems: 'center', paddingHorizontal: PAD + 4, paddingTop: 34, paddingBottom: 26 },
-  bigEmoji: { fontSize: 56, marginBottom: 10 },
-  when: { fontSize: 17, fontWeight: '700', color: PRIMARY_DARK, marginBottom: 12 },
-  names: { fontSize: T_HERO, fontWeight: '800', color: TEXT, textAlign: 'center', lineHeight: 38, marginBottom: 30 },
-  stageTitle: { fontSize: 22, fontWeight: '800', color: TEXT, marginBottom: 26, textAlign: 'center' },
+  intro: { flex: 1, paddingHorizontal: PAD, paddingTop: 80 },
+  introTitle: { fontSize: 30, fontWeight: '800', color: TEXT, lineHeight: 43 },
+  introDesc: { fontSize: T_SUB, color: TEXT_MUTED, lineHeight: 26, marginTop: 16, marginBottom: 44 },
+  introBtn: { backgroundColor: PRIMARY_DARK, borderRadius: 999, paddingVertical: 21, alignItems: 'center' },
+  introBtnText: { fontSize: 20, fontWeight: '800', color: '#FFFFFF' },
 
-  action: {
-    alignSelf: 'stretch', backgroundColor: PRIMARY_DARK, borderRadius: 999,
-    paddingVertical: 22, alignItems: 'center',
+  head: { paddingHorizontal: PAD, paddingTop: 24, paddingBottom: 22 },
+  who: { fontSize: T_SMALL, fontWeight: '700', color: PRIMARY_DARK, marginBottom: 8 },
+  verdict: { fontSize: 25, fontWeight: '800', color: TEXT, lineHeight: 35 },
+
+  scales: { paddingHorizontal: PAD },
+  legend: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  legendText: { fontSize: T_SMALL, color: TEXT_MUTED, fontWeight: '600' },
+  legendMark: { fontSize: T_SMALL, color: TEXT_MUTED, fontWeight: '600' },
+  more: { fontSize: T_SUB, fontWeight: '700', color: PRIMARY_DARK, textAlign: 'center', paddingVertical: 12 },
+  note: { fontSize: T_SMALL, color: TEXT_MUTED, lineHeight: 19, marginTop: 10 },
+
+  warnBox: { paddingHorizontal: PAD, paddingTop: 22 },
+  warnTitle: { fontSize: T_SUB, fontWeight: '800', color: WARN, marginBottom: 8 },
+  warnLine: { fontSize: T_SUB, color: TEXT_SUB, lineHeight: 25 },
+
+  line: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: PAD, paddingVertical: 16, marginTop: 16,
+    borderTopWidth: 1, borderTopColor: LINE,
   },
-  actionText: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
+  lineText: { flex: 1, fontSize: T_SUB, fontWeight: '700', color: GOLD_DARK },
+  lineMore: { fontSize: T_SUB, color: TEXT_MUTED },
 
-  doneLine: {
-    fontSize: 18, fontWeight: '700', color: PRIMARY_DARK,
-    textAlign: 'center', paddingVertical: 26,
-  },
+  missing: { paddingHorizontal: PAD, paddingTop: 22 },
+  missingTitle: { fontSize: T_SUB, fontWeight: '800', color: TEXT, marginBottom: 7 },
+  missingList: { fontSize: T_SUB, color: TEXT_SUB, lineHeight: 25 },
+  missingNote: { fontSize: T_SMALL, color: TEXT_MUTED, marginTop: 7 },
 
-  dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingBottom: 24 },
-  dot: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#D6DED9' },
-  dotDone: { backgroundColor: PRIMARY },
-  dotText: { fontSize: 14, color: TEXT_MUTED, fontWeight: '700', marginLeft: 6 },
+  today: { paddingHorizontal: PAD, paddingTop: 24 },
+  todayLabel: { fontSize: T_SMALL, fontWeight: '700', color: PRIMARY_DARK, marginBottom: 6 },
+  todayNames: { fontSize: 19, fontWeight: '800', color: TEXT, lineHeight: 28, marginBottom: 16 },
+  todayBtn: { backgroundColor: PRIMARY_DARK, borderRadius: 999, paddingVertical: 18, alignItems: 'center' },
+  todayBtnText: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  todayDone: { fontSize: T_SUB, fontWeight: '700', color: PRIMARY_DARK, textAlign: 'center', paddingVertical: 24 },
 
   money: {
-    marginHorizontal: PAD, marginBottom: 22, backgroundColor: GOLD_BG,
+    marginHorizontal: PAD, marginTop: 16, backgroundColor: GOLD_BG,
     borderRadius: 999, paddingVertical: 17, alignItems: 'center',
   },
   moneyOff: { backgroundColor: '#E4E8E5' },
   moneyText: { fontSize: 17, fontWeight: '800', color: GOLD_DARK },
 
-  alert: {
-    fontSize: 16, fontWeight: '700', color: GOLD_DARK,
-    textAlign: 'center', paddingVertical: 9, paddingHorizontal: PAD,
-  },
-
-  fold: { fontSize: 16, fontWeight: '700', color: TEXT_SUB, textAlign: 'center', paddingVertical: 20 },
-  block: { paddingHorizontal: PAD, marginBottom: 14 },
-  blockTitle: { fontSize: 16, fontWeight: '800', color: TEXT_SUB, marginBottom: 4 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  lineMark: { fontSize: 22 },
-  lineName: { fontSize: 19, fontWeight: '700', color: TEXT },
-  lineDone: { color: TEXT_MUTED, fontWeight: '500', textDecorationLine: 'line-through' },
-
-  doors: { paddingTop: 6 },
+  doors: { marginTop: 30 },
   door: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingHorizontal: PAD, paddingVertical: 17,
     borderTopWidth: 1, borderTopColor: LINE,
   },
-  doorEmoji: { fontSize: 26 },
+  doorEmoji: { fontSize: 24 },
   doorTitle: { fontSize: 17, fontWeight: '800', color: TEXT },
   doorSub: { fontSize: T_SMALL, color: TEXT_MUTED, marginTop: 3 },
+  doorArrow: { fontSize: 20, color: TEXT_MUTED },
 
-  menu: { alignItems: 'center', paddingTop: 14, paddingBottom: 26, gap: 16 },
-  menuMain: { fontSize: 19, fontWeight: '800', color: PRIMARY_DARK },
-  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  menuLink: { fontSize: 15, fontWeight: '600', color: TEXT_MUTED },
-  menuDiv: { fontSize: 15, color: '#C9D2CC' },
-
-  promo: { marginTop: 4 },
+  promo: { marginTop: 26 },
 });

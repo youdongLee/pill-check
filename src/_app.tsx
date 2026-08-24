@@ -5,6 +5,7 @@ import { ScrollView, Text } from 'react-native';
 import { context } from '../require.context';
 import { PillProvider } from '../stores/PillContext';
 import { StampProvider } from '../stores/StampContext';
+import { ProfileProvider } from '../stores/ProfileContext';
 
 class ErrorBoundary extends Component<PropsWithChildren, { error: Error | null }> {
   state = { error: null };
@@ -28,9 +29,11 @@ class ErrorBoundary extends Component<PropsWithChildren, { error: Error | null }
 function AppContainer({ children }: PropsWithChildren<InitialProps>) {
   return (
     <ErrorBoundary>
-      <PillProvider>
-        <StampProvider>{children}</StampProvider>
-      </PillProvider>
+      <ProfileProvider>
+        <PillProvider>
+          <StampProvider>{children}</StampProvider>
+        </PillProvider>
+      </ProfileProvider>
     </ErrorBoundary>
   );
 }
