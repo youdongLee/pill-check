@@ -17,6 +17,8 @@ export const AD_IDS = {
   manageBanner: 'ait.v2.live.2588455d864e4122',
   /** 점검 결과 화면 피드 — 체류가 가장 긴 자리 */
   checkFeed: 'ait.v2.live.b6930667f8144517',
+  /** 고민별 찾기 화면 피드 */
+  findFeed: 'ait.v2.live.775f2c64478b4c3b',
   /** 영양제 추가 화면 피드 */
   addFeed: 'ait.v2.live.14c7a31d3b0b46c9',
   /**

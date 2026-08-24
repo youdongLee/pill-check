@@ -232,6 +232,24 @@ function HomePage() {
           </>
         )}
 
+        {/* 이 앱이 해주는 일 — 체크 말고 나머지 */}
+        <View style={styles.doors}>
+          <TouchableOpacity style={styles.door} onPress={() => navigation.navigate('/find')} activeOpacity={0.7}>
+            <Text style={styles.doorEmoji}>🔎</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.doorTitle}>고민별로 찾아보기</Text>
+              <Text style={styles.doorSub}>무릎·눈·피로… 어떤 성분이 도움되는지</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.door} onPress={() => navigation.navigate('/card')} activeOpacity={0.7}>
+            <Text style={styles.doorEmoji}>📋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.doorTitle}>병원에서 보여주기</Text>
+              <Text style={styles.doorSub}>지금 드시는 것 한 장으로</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
         {/* 메뉴 — 글자 링크로 */}
         <View style={styles.menu}>
           <TouchableOpacity onPress={() => navigation.navigate('/add')} activeOpacity={0.7}>
@@ -311,6 +329,16 @@ const styles = StyleSheet.create({
   lineMark: { fontSize: 22 },
   lineName: { fontSize: 19, fontWeight: '700', color: TEXT },
   lineDone: { color: TEXT_MUTED, fontWeight: '500', textDecorationLine: 'line-through' },
+
+  doors: { paddingTop: 6 },
+  door: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: PAD, paddingVertical: 17,
+    borderTopWidth: 1, borderTopColor: LINE,
+  },
+  doorEmoji: { fontSize: 26 },
+  doorTitle: { fontSize: 17, fontWeight: '800', color: TEXT },
+  doorSub: { fontSize: T_SMALL, color: TEXT_MUTED, marginTop: 3 },
 
   menu: { alignItems: 'center', paddingTop: 14, paddingBottom: 26, gap: 16 },
   menuMain: { fontSize: 19, fontWeight: '800', color: PRIMARY_DARK },

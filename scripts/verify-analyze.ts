@@ -5,6 +5,7 @@
 import { analyze, recommendTiming, TIMING_LABEL } from '../src/analyze';
 import { PRODUCTS, findProduct, guessProductByName } from '../data/products';
 import { INGREDIENTS, findIngredient } from '../data/ingredients';
+import { CONCERNS, FUNCTION_CLAIMS } from '../data/concerns';
 import type { Pill, SlotKey } from '../data/types';
 
 let pass = 0;
@@ -150,7 +151,23 @@ console.log('\n[9] 프리셋 커버리지 — OCR 없이 이 목록이 성분 �
   check('성분이 빈 프리셋이 없다', noIng.length === 0, noIng.map((p) => p.id).join(', '));
 }
 
-console.log('\n[10] 빈 입력 방어');
+console.log('\n[10] 고민별 찾기 — 심사에서 가장 위험한 데이터');
+{
+  const keys = new Set(INGREDIENTS.map((i) => i.key));
+  const orphanConcern = CONCERNS.flatMap((c) => c.ingredients.filter((k) => !keys.has(k)).map((k) => `${c.key}:${k}`));
+  check('고민이 가리키는 성분이 모두 사전에 있다', orphanConcern.length === 0, orphanConcern.join(', '));
+  const orphanClaim = Object.keys(FUNCTION_CLAIMS).filter((k) => !keys.has(k));
+  check('기능성 문구의 성분이 모두 사전에 있다', orphanClaim.length === 0, orphanClaim.join(', '));
+  const noClaim = [...new Set(CONCERNS.flatMap((c) => c.ingredients.filter((k) => !FUNCTION_CLAIMS[k])))];
+  check('추천 성분에 기능성 문구가 모두 있다', noClaim.length === 0, noClaim.join(', '));
+  check('고민 key 중복 없음', new Set(CONCERNS.map((c) => c.key)).size === CONCERNS.length);
+  // 치료·예방 표현이 섞이면 심사에서 바로 걸린다
+  const banned = ['치료', '예방', '완치', '낫는', '효과가 있'];
+  const bad = Object.entries(FUNCTION_CLAIMS).filter(([, v]) => banned.some((b) => v.includes(b)));
+  check('기능성 문구에 치료·예방 표현이 없다', bad.length === 0, bad.map(([k]) => k).join(', '));
+}
+
+console.log('\n[11] 빈 입력 방어');
 {
   const { findings, totals } = analyze([]);
   check('영양제가 없으면 결과가 비어 있다', findings.length === 0 && totals.length === 0);
