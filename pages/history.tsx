@@ -1,378 +1,182 @@
 import { createRoute } from '@granite-js/react-native';
 import { InlineAd } from '@apps-in-toss/framework';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
-import { DailyRecord, SLOTS, slotOf } from '../data/types';
-
-const SLOT_ORDER = SLOTS.map((s) => s.key);
+import { DailyRecord, slotOf } from '../data/types';
 import { formatKoreanDate, getDatesBack, todayStr } from '../data/utils';
 import { AD_IDS } from '../src/ads';
+import {
+  BG, BORDER, CARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, TEXT_MUTED, TEXT_SUB,
+} from '../src/theme';
 
 export const Route = createRoute('/history', { component: HistoryPage });
 
-const PRIMARY = '#22C55E';
-const PRIMARY_DARK = '#16A34A';
-const PRIMARY_LIGHT = '#DCFCE7';
+const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+/** 기록을 훑는 기간 */
+const RANGE = 30;
 
-type HistoryEntry = {
-  date: string;
-  record: DailyRecord | null;
-};
+type Entry = { date: string; record: DailyRecord | null };
 
 function HistoryPage() {
-  const navigation = Route.useNavigation();
   const { getHistoryRecord } = usePills();
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedDate, setExpandedDate] = useState<string | null>(todayStr());
 
-  const loadHistory = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const dates = getDatesBack(30);
+    const dates = getDatesBack(RANGE);
     const results = await Promise.all(
-      dates.map(async (date) => {
-        const record = await getHistoryRecord(date);
-        return { date, record };
-      })
+      dates.map(async (date) => ({ date, record: await getHistoryRecord(date) })),
     );
-    // Only show dates with records (or today)
-    setEntries(results.filter((e) => e.record !== null || e.date === todayStr()));
+    setEntries(results);
     setLoading(false);
   }, [getHistoryRecord]);
 
-  useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+  useEffect(() => { load(); }, [load]);
 
-  const toggleExpand = (date: string) => {
-    setExpandedDate((prev) => (prev === date ? null : date));
-  };
+  /** 최근 7일에서 빠뜨린 것 — 숫자보다 "뭘 놓쳤는지"가 행동을 바꾼다 */
+  const missed = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of entries.slice(0, 7)) {
+      if (!e.record) continue;
+      for (const i of e.record.intakes) {
+        if (i.taken) continue;
+        const key = `${slotOf(i.slot).label} ${i.pillName}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  }, [entries]);
+
+  const week = useMemo(() => entries.slice(0, 7).reverse(), [entries]);
+  const withRecord = entries.filter((e) => e.record && e.record.intakes.length > 0);
+  const perfect = withRecord.filter((e) => e.record!.intakes.every((i) => i.taken)).length;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.loading}>
+        <ActivityIndicator size="large" color={PRIMARY} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>복용 기록</Text>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={PRIMARY} />
+        {/* 최근 7일 */}
+        <View style={styles.weekRow}>
+          {week.map((e) => {
+            const intakes = e.record?.intakes ?? [];
+            const done = intakes.length > 0 && intakes.every((i) => i.taken);
+            const isToday = e.date === todayStr();
+            const d = new Date(e.date.replace(/-/g, '/'));
+            return (
+              <View key={e.date} style={styles.dayCol}>
+                <View style={[styles.dayDot, done && styles.dayDotDone, isToday && !done && styles.dayDotToday]}>
+                  <Text style={styles.dayMark}>{done ? '💊' : ''}</Text>
+                </View>
+                <Text style={[styles.dayLabel, isToday && styles.dayLabelToday]}>
+                  {isToday ? '오늘' : DAY_NAMES[d.getDay()]}
+                </Text>
+              </View>
+            );
+          })}
         </View>
-      ) : entries.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>📋</Text>
-          <Text style={styles.emptyTitle}>아직 복약 기록이 없어요</Text>
-          <Text style={styles.emptyDesc}>약을 등록하고 복용 체크를{'\n'}시작해보세요!</Text>
+
+        {/* 빠뜨린 것 */}
+        {missed.length > 0 ? (
+          <View style={styles.missBox}>
+            <Text style={styles.missTitle}>이번 주에 놓친 것</Text>
+            {missed.map(([label, n]) => (
+              <Text key={label} style={styles.missLine}>· {label} <Text style={styles.missCount}>{n}번</Text></Text>
+            ))}
+          </View>
+        ) : withRecord.length > 0 ? (
+          <View style={styles.goodBox}>
+            <Text style={styles.goodText}>👍 이번 주는 하나도 안 빠뜨리셨어요</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.ad}>
+          <InlineAd adGroupId={AD_IDS.recordBanner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
         </View>
-      ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.ad}>
-            <InlineAd adGroupId={AD_IDS.recordBanner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
-          </View>
-          <SummaryBar entries={entries} />
-          {entries.map((entry) => (
-            <DayCard
-              key={entry.date}
-              entry={entry}
-              expanded={expandedDate === entry.date}
-              onToggle={() => toggleExpand(entry.date)}
-            />
-          ))}
-          <View style={styles.ad}>
-            <InlineAd adGroupId={AD_IDS.recordFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
-          </View>
-          <View style={{ height: 24 }} />
-        </ScrollView>
-      )}
+
+        {/* 지난 30일 */}
+        <Text style={styles.sectionTitle}>지난 {RANGE}일 · 다 드신 날 {perfect}일</Text>
+        {withRecord.length === 0 ? (
+          <Text style={styles.emptyText}>아직 기록이 없어요</Text>
+        ) : (
+          withRecord.map((e) => {
+            const intakes = e.record!.intakes;
+            const taken = intakes.filter((i) => i.taken).length;
+            const all = taken === intakes.length;
+            return (
+              <View key={e.date} style={styles.row}>
+                <Text style={styles.rowDate}>{formatKoreanDate(e.date)}</Text>
+                <Text style={[styles.rowStat, all && styles.rowStatDone]}>
+                  {all ? '✅ 다 드셨어요' : `${taken} / ${intakes.length}`}
+                </Text>
+              </View>
+            );
+          })
+        )}
+
+        <View style={styles.ad}>
+          <InlineAd adGroupId={AD_IDS.recordFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SummaryBar({ entries }: { entries: HistoryEntry[] }) {
-  const withRecord = entries.filter((e) => e.record && e.record.intakes.length > 0);
-  const perfectDays = withRecord.filter((e) => {
-    const r = e.record!;
-    return r.intakes.length > 0 && r.intakes.every((i) => i.taken);
-  }).length;
-  const totalDays = withRecord.length;
-
-  // Streak: consecutive perfect days from today
-  let streak = 0;
-  for (const entry of withRecord) {
-    const r = entry.record!;
-    if (r.intakes.length === 0) break;
-    if (r.intakes.every((i) => i.taken)) streak++;
-    else break;
-  }
-
-  return (
-    <View style={styles.summaryBar}>
-      <SummaryItem label="기록 일수" value={`${totalDays}일`} />
-      <View style={styles.summaryDivider} />
-      <SummaryItem label="완벽한 날" value={`${perfectDays}일`} />
-      <View style={styles.summaryDivider} />
-      <SummaryItem label="연속 복약" value={`${streak}일`} accent={streak > 0} />
-    </View>
-  );
-}
-
-function SummaryItem({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <View style={styles.summaryItem}>
-      <Text style={[styles.summaryValue, accent && styles.summaryValueAccent]}>{value}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function DayCard({
-  entry,
-  expanded,
-  onToggle,
-}: {
-  entry: HistoryEntry;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const { date, record } = entry;
-  const isToday = date === todayStr();
-  const intakes = record?.intakes ?? [];
-  const taken = intakes.filter((i) => i.taken).length;
-  const total = intakes.length;
-  const pct = total > 0 ? Math.round((taken / total) * 100) : 0;
-  const allDone = total > 0 && taken === total;
-
-  return (
-    <View style={[styles.dayCard, isToday && styles.dayCardToday]}>
-      <TouchableOpacity
-        style={styles.dayCardHeader}
-        onPress={onToggle}
-        activeOpacity={0.7}
-      >
-        <View style={styles.dayInfo}>
-          <Text style={[styles.dayDate, isToday && styles.dayDateToday]}>
-            {isToday ? '📅 ' : ''}{formatKoreanDate(date)}
-          </Text>
-          {total === 0 ? (
-            <Text style={styles.dayNoRecord}>기록 없음</Text>
-          ) : (
-            <Text style={[styles.dayStats, allDone && styles.dayStatsDone]}>
-              {allDone ? '✅ 완료' : `${taken} / ${total} 복용`}
-            </Text>
-          )}
-        </View>
-        {total > 0 && (
-          <View style={styles.dayRight}>
-            <Text style={[styles.dayPct, allDone && styles.dayPctDone]}>{pct}%</Text>
-            <Text style={styles.dayChevron}>{expanded ? '▲' : '▼'}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {total > 0 && (
-        <View style={styles.miniBar}>
-          <View style={[styles.miniBarFill, { width: `${pct}%` }]} />
-        </View>
-      )}
-
-      {expanded && total > 0 && (
-        <View style={styles.dayDetail}>
-          {intakes
-            .slice()
-            .sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot))
-            .map((intake, idx) => (
-              <View key={idx} style={styles.intakeRow}>
-                <Text style={[styles.intakeCheck, intake.taken && styles.intakeCheckDone]}>
-                  {intake.taken ? '✅' : '⬜️'}
-                </Text>
-                <Text style={[styles.intakeName, !intake.taken && styles.intakeNameMissed]}>
-                  {intake.pillName}
-                </Text>
-                <Text style={styles.intakeTime}>{slotOf(intake.slot).label}</Text>
-              </View>
-            ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  loading: { flex: 1, backgroundColor: BG, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: BG },
+  scroll: { padding: 16, paddingBottom: 40 },
+
+  title: { fontSize: 22, fontWeight: '800', color: TEXT, marginBottom: 18 },
+
+  weekRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  dayCol: { alignItems: 'center', flex: 1 },
+  dayDot: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: CARD,
+    borderWidth: 1.5, borderColor: BORDER, alignItems: 'center', justifyContent: 'center', marginBottom: 6,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dayDotDone: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
+  dayDotToday: { borderColor: PRIMARY, borderWidth: 2 },
+  dayMark: { fontSize: 18 },
+  dayLabel: { fontSize: 12, color: TEXT_MUTED, fontWeight: '600' },
+  dayLabelToday: { color: PRIMARY_DARK, fontWeight: '800' },
+
+  missBox: {
+    backgroundColor: '#FFF8E8', borderRadius: 16, borderWidth: 1, borderColor: '#EBD9AE',
+    padding: 18, marginBottom: 8,
   },
-  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginBottom: 12 },
-  scroll: {
-    flex: 1,
+  missTitle: { fontSize: 17, fontWeight: '800', color: '#8A5D0F', marginBottom: 10 },
+  missLine: { fontSize: 16, color: '#6B4A0C', lineHeight: 27 },
+  missCount: { fontWeight: '800' },
+
+  goodBox: {
+    backgroundColor: PRIMARY_LIGHT, borderRadius: 16, borderWidth: 1, borderColor: '#BFE3CC',
+    padding: 18, marginBottom: 8,
   },
-  scrollContent: {
-    padding: 20,
+  goodText: { fontSize: 17, fontWeight: '700', color: '#14603A' },
+
+  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginVertical: 14 },
+
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: TEXT, marginBottom: 12 },
+  row: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: CARD, borderRadius: 12, paddingVertical: 15, paddingHorizontal: 16, marginBottom: 7,
   },
-  summaryBar: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryDivider: {
-    width: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  summaryValueAccent: {
-    color: PRIMARY_DARK,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  dayCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    marginBottom: 10,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  dayCardToday: {
-    borderColor: PRIMARY,
-    borderWidth: 1.5,
-  },
-  dayCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  dayInfo: {
-    flex: 1,
-  },
-  dayDate: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 3,
-  },
-  dayDateToday: {
-    color: PRIMARY_DARK,
-  },
-  dayStats: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  dayStatsDone: {
-    color: PRIMARY_DARK,
-    fontWeight: '700',
-  },
-  dayNoRecord: {
-    fontSize: 13,
-    color: '#D1D5DB',
-  },
-  dayRight: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  dayPct: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#9CA3AF',
-  },
-  dayPctDone: {
-    color: PRIMARY,
-  },
-  dayChevron: {
-    fontSize: 11,
-    color: '#9CA3AF',
-  },
-  miniBar: {
-    height: 4,
-    backgroundColor: '#F3F4F6',
-    marginHorizontal: 16,
-    marginBottom: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  miniBarFill: {
-    height: 4,
-    backgroundColor: PRIMARY,
-    borderRadius: 2,
-  },
-  dayDetail: {
-    padding: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    gap: 10,
-  },
-  intakeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  intakeCheck: {
-    fontSize: 16,
-  },
-  intakeCheckDone: {},
-  intakeName: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  intakeNameMissed: {
-    color: '#9CA3AF',
-  },
-  intakeTime: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    fontWeight: '500',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 60,
-  },
-  emptyEmoji: {
-    fontSize: 52,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  emptyDesc: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+  rowDate: { fontSize: 16, color: TEXT, fontWeight: '600' },
+  rowStat: { fontSize: 15, color: TEXT_SUB, fontWeight: '700' },
+  rowStatDone: { color: PRIMARY_DARK },
+
+  emptyText: { fontSize: 16, color: TEXT_MUTED, textAlign: 'center', paddingVertical: 30 },
 });

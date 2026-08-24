@@ -9,7 +9,7 @@ import { usePills } from '../stores/PillContext';
 import { PRODUCTS, type Product } from '../data/products';
 import { findIngredient } from '../data/ingredients';
 import { SLOTS, type SlotKey } from '../data/types';
-import { recommendTiming, TIMING_LABEL } from '../src/analyze';
+import { recommendTiming } from '../src/analyze';
 import { AD_IDS } from '../src/ads';
 import { IngredientPicker } from '../src/IngredientPicker';
 import {
@@ -18,41 +18,38 @@ import {
 
 export const Route = createRoute('/add', { component: AddPage });
 
-/** 성분 조합에 맞는 기본 시간대를 고른다 */
-function defaultSlotsFor(product: Product): SlotKey[] {
-  const { timing } = recommendTiming(product.ingredients.map((i) => i.key));
-  if (timing === 'bedtime') return ['bedtime'];
-  if (timing === 'empty') return ['morning'];
-  return ['morning'];
-}
+/** 처음에 보여줄 제품 수 — 38개를 한꺼번에 펼치면 오히려 고르기 어렵다 */
+const PREVIEW_COUNT = 12;
 
 function AddPage() {
   const navigation = Route.useNavigation();
   const { pills, maxPills, addPill } = usePills();
 
   const [product, setProduct] = useState<Product | null>(null);
-  const [customName, setCustomName] = useState('');
   const [isCustom, setIsCustom] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customIngredients, setCustomIngredients] = useState<{ key: string; amount: number }[]>([]);
   const [slots, setSlots] = useState<SlotKey[]>(['morning']);
   const [count, setCount] = useState('');
-  const [customIngredients, setCustomIngredients] = useState<{ key: string; amount: number }[]>([]);
+  const [showAllProducts, setShowAllProducts] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const atLimit = pills.length >= maxPills;
+  const advice = useMemo(
+    () => (product ? recommendTiming(product.ingredients.map((i) => i.key)) : null),
+    [product],
+  );
 
-  const advice = useMemo(() => {
-    if (!product) return null;
-    return recommendTiming(product.ingredients.map((i) => i.key));
-  }, [product]);
+  const visibleProducts = showAllProducts ? PRODUCTS : PRODUCTS.slice(0, PREVIEW_COUNT);
 
-  const pickProduct = (p: Product) => {
+  const pick = (p: Product) => {
+    Keyboard.dismiss();
     setProduct(p);
     setIsCustom(false);
     setCustomName('');
-    setSlots(defaultSlotsFor(p));
-    setCount(String(p.defaultCount));
     setCustomIngredients([]);
-    Keyboard.dismiss();
+    setCount(String(p.defaultCount));
+    const { timing } = recommendTiming(p.ingredients.map((i) => i.key));
+    setSlots(timing === 'bedtime' ? ['bedtime'] : ['morning']);
   };
 
   const pickCustom = () => {
@@ -62,33 +59,30 @@ function AddPage() {
     setCount('');
   };
 
-  const toggleSlot = (key: SlotKey) => {
-    setSlots((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
-  };
+  const name = isCustom ? customName.trim() : product?.name ?? '';
+  const chosen = Boolean(product) || isCustom;
+  const valid = name.length > 0 && slots.length > 0;
 
-  const finalName = isCustom ? customName.trim() : product?.name ?? '';
-  const isValid = finalName.length > 0 && slots.length > 0;
-
-  const handleSave = async () => {
-    if (!isValid || saving) return;
-    if (atLimit) {
-      Alert.alert('자리가 꽉 찼어요', `지금은 ${maxPills}개까지 넣을 수 있어요.\n내 영양제 화면에서 광고를 보면 한 자리 늘릴 수 있어요.`, [
+  const save = async () => {
+    if (!valid || saving) return;
+    if (pills.length >= maxPills) {
+      Alert.alert('자리가 꽉 찼어요', `지금은 ${maxPills}개까지 넣을 수 있어요.`, [
         { text: '알겠어요', style: 'cancel' },
-        { text: '자리 늘리러 가기', onPress: () => navigation.navigate('/manage') },
+        { text: '자리 늘리기', onPress: () => navigation.navigate('/manage') },
       ]);
       return;
     }
     Keyboard.dismiss();
     setSaving(true);
-    const parsedCount = Number(count.replace(/[^0-9]/g, ''));
+    const n = Number(count.replace(/[^0-9]/g, ''));
     await addPill({
-      name: finalName,
+      name,
       emoji: product?.emoji ?? '💊',
       color: product?.color ?? PRIMARY,
       productId: product?.id,
       ingredients: product?.ingredients ?? customIngredients.filter((i) => i.amount > 0),
       slots,
-      remaining: Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : undefined,
+      remaining: Number.isFinite(n) && n > 0 ? n : undefined,
     });
     setSaving(false);
     navigation.navigate('/');
@@ -96,133 +90,117 @@ function AddPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <Text style={styles.lead}>제품을 고르면 성분이 자동으로 들어와요</Text>
+        <Text style={styles.title}>어떤 영양제를 드세요?</Text>
+        <Text style={styles.lead}>고르면 성분이 자동으로 들어와요</Text>
 
-        {/* 제품 고르기 */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>많이 찾는 제품</Text>
-          <View style={styles.chipWrap}>
-            {PRODUCTS.map((p) => {
-              const on = product?.id === p.id;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.chip, on && styles.chipOn]}
-                  onPress={() => pickProduct(p)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.chipEmoji}>{p.emoji}</Text>
-                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{p.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity style={[styles.chip, isCustom && styles.chipOn]} onPress={pickCustom} activeOpacity={0.8}>
-              <Text style={styles.chipEmoji}>✏️</Text>
-              <Text style={[styles.chipText, isCustom && styles.chipTextOn]}>목록에 없어요</Text>
+        <View style={styles.chipWrap}>
+          {visibleProducts.map((p) => {
+            const on = product?.id === p.id;
+            return (
+              <TouchableOpacity key={p.id} style={[styles.chip, on && styles.chipOn]} onPress={() => pick(p)} activeOpacity={0.8}>
+                <Text style={styles.chipEmoji}>{p.emoji}</Text>
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>{p.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          {!showAllProducts && (
+            <TouchableOpacity style={styles.chip} onPress={() => setShowAllProducts(true)} activeOpacity={0.8}>
+              <Text style={styles.chipText}>더 보기 ▾</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 직접 입력 */}
-        {isCustom && (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>영양제 이름</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="예) 프로폴리스"
-              placeholderTextColor={TEXT_MUTED}
-              value={customName}
-              onChangeText={setCustomName}
-              returnKeyType="done"
-              onSubmitEditing={Keyboard.dismiss}
-              autoFocus
-            />
-            <View style={{ height: 16 }} />
-            <Text style={styles.cardLabel}>들어있는 성분 <Text style={styles.optional}>(선택)</Text></Text>
-            <IngredientPicker value={customIngredients} onChange={setCustomIngredients} />
-          </View>
-        )}
-
-        {/* 성분 미리보기 */}
-        {product && (
-          <View style={[styles.card, styles.cardHero]}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.productName}>{product.emoji} {product.name}</Text>
-            </View>
-            <Text style={styles.cardLabel}>한 번에 드시는 양에 들어있는 성분</Text>
-            <View style={styles.ingWrap}>
-              {product.ingredients.map((ing) => {
-                const meta = findIngredient(ing.key);
-                if (!meta) return null;
-                return (
-                  <View key={ing.key} style={styles.ingChip}>
-                    <Text style={styles.ingText}>{meta.name} {ing.amount}{meta.unit}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* 남은 개수 */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>몇 알 들어있나요? <Text style={styles.optional}>(선택)</Text></Text>
-          <View style={styles.countRow}>
-            <TextInput
-              style={styles.countInput}
-              placeholder="60"
-              placeholderTextColor={TEXT_MUTED}
-              value={count}
-              onChangeText={setCount}
-              keyboardType="number-pad"
-              returnKeyType="done"
-              onSubmitEditing={Keyboard.dismiss}
-              maxLength={4}
-            />
-            <Text style={styles.countUnit}>알</Text>
-          </View>
-          <Text style={styles.hint}>넣어두시면 다 떨어지기 전에 알려드려요</Text>
-        </View>
-
-        {/* 시간대 */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>언제 드실래요?</Text>
-          {advice?.reason && (
-            <View style={styles.adviceBox}>
-              <Text style={styles.adviceText}>
-                💡 {advice.reason}
-              </Text>
-              <Text style={styles.adviceSub}>추천: {TIMING_LABEL[advice.timing]}</Text>
-            </View>
           )}
-          <View style={styles.slotRow}>
-            {SLOTS.map((s) => {
-              const on = slots.includes(s.key);
-              return (
-                <TouchableOpacity
-                  key={s.key}
-                  style={[styles.slotChip, on && styles.slotChipOn]}
-                  onPress={() => toggleSlot(s.key)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.slotEmoji}>{s.emoji}</Text>
-                  <Text style={[styles.slotLabel, on && styles.slotLabelOn]}>{s.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <TouchableOpacity style={[styles.chip, isCustom && styles.chipOn]} onPress={pickCustom} activeOpacity={0.8}>
+            <Text style={styles.chipEmoji}>✏️</Text>
+            <Text style={[styles.chipText, isCustom && styles.chipTextOn]}>목록에 없어요</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={[styles.saveBtn, !isValid && styles.saveBtnOff]}
-          onPress={handleSave}
-          disabled={!isValid || saving}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.saveBtnText}>{saving ? '넣는 중...' : '추가하기'}</Text>
-        </TouchableOpacity>
+        {/* 고르기 전엔 아래를 띄우지 않는다 — 한 번에 하나씩 */}
+        {chosen && (
+          <>
+            {isCustom ? (
+              <View style={styles.block}>
+                <Text style={styles.label}>이름</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="예) 아스타잔틴"
+                  placeholderTextColor={TEXT_MUTED}
+                  value={customName}
+                  onChangeText={setCustomName}
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                  autoFocus
+                />
+                <View style={{ height: 20 }} />
+                <Text style={styles.label}>들어있는 성분 <Text style={styles.optional}>(몰라도 괜찮아요)</Text></Text>
+                <IngredientPicker value={customIngredients} onChange={setCustomIngredients} />
+              </View>
+            ) : (
+              product && (
+                <View style={styles.block}>
+                  <Text style={styles.label}>들어있는 성분</Text>
+                  <View style={styles.ingWrap}>
+                    {product.ingredients.map((ing) => {
+                      const meta = findIngredient(ing.key);
+                      if (!meta) return null;
+                      return (
+                        <View key={ing.key} style={styles.ingChip}>
+                          <Text style={styles.ingText}>{meta.name} {ing.amount}{meta.unit}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )
+            )}
+
+            <View style={styles.block}>
+              <Text style={styles.label}>언제 드세요?</Text>
+              {advice?.reason && <Text style={styles.advice}>💡 {advice.reason}</Text>}
+              <View style={styles.slotRow}>
+                {SLOTS.map((s) => {
+                  const on = slots.includes(s.key);
+                  return (
+                    <TouchableOpacity
+                      key={s.key}
+                      style={[styles.slot, on && styles.slotOn]}
+                      onPress={() =>
+                        setSlots((prev) => (prev.includes(s.key) ? prev.filter((x) => x !== s.key) : [...prev, s.key]))
+                      }
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.slotEmoji}>{s.emoji}</Text>
+                      <Text style={[styles.slotLabel, on && styles.slotLabelOn]}>{s.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.block}>
+              <Text style={styles.label}>몇 알 들어있나요? <Text style={styles.optional}>(선택)</Text></Text>
+              <View style={styles.countRow}>
+                <TextInput
+                  style={styles.countInput}
+                  placeholder="60"
+                  placeholderTextColor={TEXT_MUTED}
+                  value={count}
+                  onChangeText={setCount}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                  maxLength={4}
+                />
+                <Text style={styles.countUnit}>알</Text>
+                <Text style={styles.countHint}>다 떨어지기 전에 알려드려요</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={[styles.saveBtn, !valid && styles.saveOff]} onPress={save} disabled={!valid || saving} activeOpacity={0.85}>
+              <Text style={styles.saveText}>{saving ? '넣는 중...' : '넣기'}</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         <View style={styles.ad}>
           <InlineAd adGroupId={AD_IDS.addFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
@@ -235,63 +213,59 @@ function AddPage() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
   scroll: { padding: 16, paddingBottom: 40 },
-  lead: { fontSize: 15, color: TEXT_SUB, marginBottom: 14 },
 
-  card: {
-    backgroundColor: CARD, borderRadius: 16, borderWidth: 1, borderColor: BORDER,
-    padding: 16, marginBottom: 12,
-  },
-  cardHero: { borderColor: PRIMARY, borderWidth: 1.5 },
-  cardLabel: { fontSize: 14, fontWeight: '700', color: TEXT, marginBottom: 10 },
-  optional: { fontWeight: '400', color: TEXT_MUTED, fontSize: 13 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  productName: { fontSize: 18, fontWeight: '800', color: TEXT },
+  title: { fontSize: 22, fontWeight: '800', color: TEXT, marginBottom: 5 },
+  lead: { fontSize: 15, color: TEXT_SUB, marginBottom: 18 },
 
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 22,
-    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent',
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 24,
+    backgroundColor: CARD, borderWidth: 1.5, borderColor: BORDER,
   },
   chipOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  chipEmoji: { fontSize: 15 },
-  chipText: { fontSize: 14, fontWeight: '600', color: '#4B5563' },
-  chipTextOn: { color: PRIMARY_DARK },
+  chipEmoji: { fontSize: 16 },
+  chipText: { fontSize: 15, fontWeight: '700', color: TEXT_SUB },
+  chipTextOn: { color: PRIMARY_DARK, fontWeight: '800' },
+
+  block: { marginTop: 22 },
+  label: { fontSize: 17, fontWeight: '800', color: TEXT, marginBottom: 12 },
+  optional: { fontSize: 14, fontWeight: '500', color: TEXT_MUTED },
 
   input: {
-    backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
-    fontSize: 16, color: TEXT,
+    backgroundColor: CARD, borderRadius: 14, borderWidth: 1, borderColor: BORDER,
+    paddingHorizontal: 16, paddingVertical: 15, fontSize: 17, color: TEXT,
   },
-  hint: { fontSize: 13, color: TEXT_MUTED, marginTop: 8, lineHeight: 19 },
 
-  ingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  ingChip: { backgroundColor: '#F3F4F6', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
-  ingText: { fontSize: 13, color: '#4B5563', fontWeight: '500' },
+  ingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  ingChip: {
+    backgroundColor: CARD, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  ingText: { fontSize: 14, color: TEXT_SUB, fontWeight: '600' },
+
+  advice: { fontSize: 15, color: PRIMARY_DARK, lineHeight: 22, marginBottom: 12, fontWeight: '600' },
+  slotRow: { flexDirection: 'row', gap: 8 },
+  slot: {
+    flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 14,
+    backgroundColor: CARD, borderWidth: 1.5, borderColor: BORDER,
+  },
+  slotOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
+  slotEmoji: { fontSize: 20, marginBottom: 4 },
+  slotLabel: { fontSize: 14, fontWeight: '700', color: TEXT_SUB },
+  slotLabelOn: { color: PRIMARY_DARK, fontWeight: '800' },
 
   countRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   countInput: {
-    width: 100, backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
-    fontSize: 18, fontWeight: '700', color: TEXT, textAlign: 'center',
+    width: 92, backgroundColor: CARD, borderRadius: 14, borderWidth: 1, borderColor: BORDER,
+    paddingVertical: 15, fontSize: 19, fontWeight: '700', color: TEXT, textAlign: 'center',
   },
-  countUnit: { fontSize: 16, color: TEXT_SUB, fontWeight: '600' },
+  countUnit: { fontSize: 17, color: TEXT_SUB, fontWeight: '700' },
+  countHint: { flex: 1, fontSize: 13, color: TEXT_MUTED },
 
-  adviceBox: { backgroundColor: PRIMARY_LIGHT, borderRadius: 12, padding: 12, marginBottom: 12 },
-  adviceText: { fontSize: 14, color: '#14603A', fontWeight: '600', lineHeight: 20 },
-  adviceSub: { fontSize: 13, color: PRIMARY_DARK, marginTop: 4, fontWeight: '700' },
+  saveBtn: { marginTop: 26, backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 19, alignItems: 'center' },
+  saveOff: { backgroundColor: '#C6CFC9' },
+  saveText: { fontSize: 19, fontWeight: '800', color: '#FFFFFF' },
 
-  slotRow: { flexDirection: 'row', gap: 8 },
-  slotChip: {
-    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12,
-    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent',
-  },
-  slotChipOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  slotEmoji: { fontSize: 18, marginBottom: 3 },
-  slotLabel: { fontSize: 13, fontWeight: '600', color: '#4B5563' },
-  slotLabelOn: { color: PRIMARY_DARK, fontWeight: '800' },
-
-  saveBtn: { backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 17, alignItems: 'center', marginTop: 4 },
-  saveBtnOff: { backgroundColor: '#D1D5DB' },
-  saveBtnText: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
-
-  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginTop: 20 },
+  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginTop: 28 },
 });

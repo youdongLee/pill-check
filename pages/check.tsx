@@ -1,6 +1,6 @@
 import { createRoute } from '@granite-js/react-native';
 import { InlineAd } from '@apps-in-toss/framework';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { usePills } from '../stores/PillContext';
 import { analyze, DISCLAIMER, type Finding } from '../src/analyze';
@@ -11,140 +11,119 @@ import {
 
 export const Route = createRoute('/check', { component: CheckPage });
 
-const LEVEL_STYLE = {
-  over: { bg: '#FDEEEB', border: '#E3A99E', title: '#9A3B2C', tag: '넘었어요' },
-  duplicate: { bg: '#FFF8E8', border: '#E8C275', title: GOLD_DARK, tag: '겹쳐요' },
-  conflict: { bg: '#FFF8E8', border: '#E8C275', title: GOLD_DARK, tag: '나눠 드세요' },
-  synergy: { bg: PRIMARY_LIGHT, border: PRIMARY, title: '#14603A', tag: '잘 맞아요' },
+const LEVEL = {
+  over: { bg: '#FDEEEB', border: '#E3A99E', title: '#9A3B2C' },
+  duplicate: { bg: '#FFF8E8', border: '#EBD9AE', title: GOLD_DARK },
+  conflict: { bg: '#FFF8E8', border: '#EBD9AE', title: GOLD_DARK },
+  synergy: { bg: PRIMARY_LIGHT, border: '#BFE3CC', title: '#14603A' },
 } as const;
+
+/** 성분별 섭취량을 처음에 몇 개까지 보여줄지 — 45종을 다 펼치면 읽히지 않는다 */
+const TOTALS_PREVIEW = 5;
 
 function CheckPage() {
   const navigation = Route.useNavigation();
   const { pills, loading } = usePills();
+  const [showAll, setShowAll] = useState(false);
 
   const { findings, totals } = useMemo(() => analyze(pills), [pills]);
-  const withIngredients = pills.filter((p) => p.ingredients.length > 0);
-  const needsReview = pills.filter((p) => p.needsReview);
-  const noData = pills.filter((p) => p.ingredients.length === 0);
+  const withIng = pills.filter((p) => p.ingredients.length > 0);
+  const needsFix = pills.filter((p) => p.needsReview || p.ingredients.length === 0);
 
   const actionable = findings.filter((f) => f.level !== 'synergy');
   const good = findings.filter((f) => f.level === 'synergy');
+  const shownTotals = showAll ? totals : totals.slice(0, TOTALS_PREVIEW);
+
+  if (loading) return <SafeAreaView style={styles.container} />;
+
+  if (withIng.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.empty}>
+          <Text style={styles.emptyEmoji}>🔬</Text>
+          <Text style={styles.emptyTitle}>점검할 영양제가 없어요</Text>
+          <Text style={styles.emptyDesc}>제품을 골라 넣으면{'\n'}겹치는 성분을 찾아드려요</Text>
+          <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('/add')} activeOpacity={0.85}>
+            <Text style={styles.emptyBtnText}>영양제 넣기</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
-
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {loading ? null : withIngredients.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🔬</Text>
-            <Text style={styles.emptyTitle}>점검할 영양제가 없어요</Text>
-            <Text style={styles.emptyDesc}>
-              제품을 골라서 등록하면{'\n'}겹치는 성분과 궁합을 봐드려요
+        {/* 결론 한 줄 */}
+        <Text style={styles.verdict}>
+          {actionable.length === 0 ? '👍 겹치거나 넘치는 게 없어요' : `점검할 게 ${actionable.length}가지 있어요`}
+        </Text>
+        <Text style={styles.verdictSub}>영양제 {withIng.length}개를 성분으로 합쳐서 봤어요</Text>
+
+        {actionable.map((f, i) => <Card key={`a${i}`} finding={f} />)}
+
+        <View style={styles.ad}>
+          <InlineAd adGroupId={AD_IDS.checkFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+
+        {good.map((f, i) => <Card key={`g${i}`} finding={f} />)}
+
+        {/* 성분별 섭취량 */}
+        <Text style={styles.sectionTitle}>성분별 하루 섭취량</Text>
+        {shownTotals.map((t) => {
+          const over = t.percent !== null && t.percent > 100;
+          return (
+            <View key={t.key} style={styles.totalRow}>
+              <View style={styles.totalHead}>
+                <Text style={styles.totalName}>{t.name}</Text>
+                <Text style={[styles.totalAmount, over && styles.totalOver]}>
+                  {t.total}{t.unit}{t.percent !== null ? ` · ${t.percent}%` : ''}
+                </Text>
+              </View>
+              <View style={styles.barTrack}>
+                <View
+                  style={[
+                    styles.barFill,
+                    { width: `${Math.min(100, t.percent ?? 0)}%` },
+                    over && styles.barOver,
+                    t.percent === null && styles.barNone,
+                  ]}
+                />
+              </View>
+            </View>
+          );
+        })}
+        {totals.length > TOTALS_PREVIEW && (
+          <TouchableOpacity style={styles.moreBtn} onPress={() => setShowAll(!showAll)} activeOpacity={0.7}>
+            <Text style={styles.moreText}>
+              {showAll ? '접기 ▲' : `나머지 ${totals.length - TOTALS_PREVIEW}가지 보기 ▼`}
             </Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('/add')} activeOpacity={0.85}>
-              <Text style={styles.emptyBtnText}>영양제 추가하기</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <View style={styles.summary}>
-              <Text style={styles.summaryTitle}>
-                {actionable.length === 0 ? '👍 손볼 게 없어요' : `점검할 게 ${actionable.length}가지 있어요`}
-              </Text>
-              <Text style={styles.summarySub}>
-                등록하신 {withIngredients.length}개를 성분으로 합쳐서 봤어요
-              </Text>
-            </View>
-
-            {/* 확인 필요 — 이름만 보고 추정한 항목 */}
-            {needsReview.length > 0 && (
-              <View style={styles.reviewCard}>
-                <Text style={styles.reviewTitle}>확인해 주세요</Text>
-                <Text style={styles.reviewText}>
-                  {needsReview.map((p) => p.name).join(' · ')}은(는) 이름만 보고 성분을 짐작했어요.
-                  제품 뒷면과 다르면 고쳐주세요.
-                </Text>
-                <TouchableOpacity style={styles.reviewBtn} onPress={() => navigation.navigate('/manage')} activeOpacity={0.85}>
-                  <Text style={styles.reviewBtnText}>확인하러 가기</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* 점검 결과 */}
-            {actionable.map((f, i) => <FindingCard key={`a${i}`} finding={f} />)}
-
-            <View style={styles.ad}>
-              <InlineAd adGroupId={AD_IDS.checkFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
-            </View>
-
-            {good.map((f, i) => <FindingCard key={`g${i}`} finding={f} />)}
-
-            {/* 성분별 하루 섭취량 */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>성분별 하루 섭취량</Text>
-              <Text style={styles.cardSub}>드시는 시간대 수만큼 곱해서 계산했어요</Text>
-              <View style={{ height: 6 }} />
-              {totals.map((t) => {
-                const pct = t.percent;
-                const over = pct !== null && pct > 100;
-                return (
-                  <View key={t.key} style={styles.totalRow}>
-                    <View style={styles.totalHead}>
-                      <Text style={styles.totalName}>{t.name}</Text>
-                      <Text style={[styles.totalAmount, over && styles.totalAmountOver]}>
-                        {t.total}{t.unit}
-                        {pct !== null ? ` · 상한의 ${pct}%` : ''}
-                      </Text>
-                    </View>
-                    <View style={styles.barTrack}>
-                      <View
-                        style={[
-                          styles.barFill,
-                          { width: `${Math.min(100, pct ?? 0)}%` },
-                          over && styles.barFillOver,
-                          pct === null && styles.barFillNone,
-                        ]}
-                      />
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-
-            {/* 성분 정보가 없는 항목 */}
-            {noData.length > 0 && (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>성분을 모르는 영양제</Text>
-                <Text style={styles.cardSub}>
-                  {noData.map((p) => p.name).join(' · ')}은(는) 성분 정보가 없어 점검에서 빠졌어요.
-                </Text>
-              </View>
-            )}
-
-            <Text style={styles.disclaimer}>{DISCLAIMER}</Text>
-          </>
+          </TouchableOpacity>
         )}
+
+        {/* 성분을 확인해야 하는 것 — 한 줄로 합친다 */}
+        {needsFix.length > 0 && (
+          <TouchableOpacity style={styles.fixRow} onPress={() => navigation.navigate('/manage')} activeOpacity={0.85}>
+            <Text style={styles.fixText}>
+              {needsFix.map((p) => p.name).join(' · ')}은(는) 성분을 확인해 주세요
+            </Text>
+            <Text style={styles.fixMore}>고치기 ›</Text>
+          </TouchableOpacity>
+        )}
+
+        <Text style={styles.disclaimer}>{DISCLAIMER}</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function FindingCard({ finding }: { finding: Finding }) {
-  const s = LEVEL_STYLE[finding.level];
+function Card({ finding }: { finding: Finding }) {
+  const s = LEVEL[finding.level];
   return (
-    <View style={[styles.finding, { backgroundColor: s.bg, borderColor: s.border }]}>
-      <View style={styles.findingHead}>
-        <Text style={[styles.findingTitle, { color: s.title }]}>{finding.title}</Text>
-        <Text style={[styles.findingTag, { color: s.title }]}>{s.tag}</Text>
-      </View>
-      <Text style={styles.findingMsg}>{finding.message}</Text>
-      <View style={styles.findingChips}>
-        {finding.products.map((p) => (
-          <View key={p} style={styles.findingChip}>
-            <Text style={styles.findingChipText}>{p}</Text>
-          </View>
-        ))}
-      </View>
+    <View style={[styles.card, { backgroundColor: s.bg, borderColor: s.border }]}>
+      <Text style={[styles.cardTitle, { color: s.title }]}>{finding.title}</Text>
+      <Text style={styles.cardMsg}>{finding.message}</Text>
+      <Text style={styles.cardWho}>{finding.products.join(' · ')}</Text>
     </View>
   );
 }
@@ -153,54 +132,44 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
   scroll: { padding: 16, paddingBottom: 40 },
 
-  summary: { marginBottom: 16 },
-  summaryTitle: { fontSize: 20, fontWeight: '800', color: TEXT, marginBottom: 4 },
-  summarySub: { fontSize: 14, color: TEXT_SUB },
+  verdict: { fontSize: 22, fontWeight: '800', color: TEXT, marginBottom: 5 },
+  verdictSub: { fontSize: 15, color: TEXT_SUB, marginBottom: 18 },
 
-  reviewCard: {
-    backgroundColor: '#EFF6FF', borderRadius: 16, borderWidth: 1, borderColor: '#BFDBFE',
-    padding: 16, marginBottom: 12,
+  card: { borderRadius: 16, borderWidth: 1.5, padding: 18, marginBottom: 12 },
+  cardTitle: { fontSize: 18, fontWeight: '800', marginBottom: 7 },
+  cardMsg: { fontSize: 16, color: '#3C4B41', lineHeight: 24 },
+  cardWho: { fontSize: 14, color: TEXT_MUTED, marginTop: 9, fontWeight: '600' },
+
+  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginVertical: 6 },
+
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: TEXT, marginTop: 20, marginBottom: 14 },
+  totalRow: { marginBottom: 14 },
+  totalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  totalName: { fontSize: 16, fontWeight: '700', color: TEXT },
+  totalAmount: { fontSize: 15, color: TEXT_SUB, fontWeight: '700' },
+  totalOver: { color: '#9A3B2C', fontWeight: '800' },
+  barTrack: { height: 9, backgroundColor: '#E7ECE8', borderRadius: 5, overflow: 'hidden' },
+  barFill: { height: 9, backgroundColor: PRIMARY, borderRadius: 5 },
+  barOver: { backgroundColor: '#D97757' },
+  barNone: { backgroundColor: '#CFD8D2', width: 7 },
+
+  moreBtn: { paddingVertical: 14, alignItems: 'center' },
+  moreText: { fontSize: 16, fontWeight: '700', color: PRIMARY_DARK },
+
+  fixRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: CARD, borderRadius: 14, borderWidth: 1, borderColor: BORDER,
+    padding: 16, marginTop: 10,
   },
-  reviewTitle: { fontSize: 15, fontWeight: '800', color: '#1D4ED8', marginBottom: 6 },
-  reviewText: { fontSize: 14, color: '#1E3A8A', lineHeight: 21 },
-  reviewBtn: { backgroundColor: '#FFFFFF', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
-  reviewBtnText: { fontSize: 14, fontWeight: '700', color: '#1D4ED8' },
+  fixText: { flex: 1, fontSize: 15, color: TEXT_SUB, lineHeight: 22, fontWeight: '600' },
+  fixMore: { fontSize: 15, fontWeight: '700', color: PRIMARY_DARK },
 
-  finding: { borderRadius: 16, borderWidth: 1.5, padding: 16, marginBottom: 12 },
-  findingHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  findingTitle: { fontSize: 16, fontWeight: '800', flex: 1 },
-  findingTag: { fontSize: 12, fontWeight: '700', opacity: 0.8 },
-  findingMsg: { fontSize: 14, color: '#3C4B41', lineHeight: 21 },
-  findingChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  findingChip: { backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4 },
-  findingChipText: { fontSize: 12, fontWeight: '600', color: '#4B5563' },
+  disclaimer: { fontSize: 13, color: TEXT_MUTED, lineHeight: 20, marginTop: 20, paddingHorizontal: 2 },
 
-  card: {
-    backgroundColor: CARD, borderRadius: 16, borderWidth: 1, borderColor: BORDER,
-    padding: 16, marginBottom: 12,
-  },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: TEXT, marginBottom: 4 },
-  cardSub: { fontSize: 13, color: TEXT_MUTED, lineHeight: 19 },
-
-  totalRow: { marginTop: 12 },
-  totalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 },
-  totalName: { fontSize: 14, fontWeight: '600', color: TEXT },
-  totalAmount: { fontSize: 13, color: TEXT_SUB, fontWeight: '600' },
-  totalAmountOver: { color: '#9A3B2C', fontWeight: '800' },
-  barTrack: { height: 8, backgroundColor: '#EEF2EF', borderRadius: 4, overflow: 'hidden' },
-  barFill: { height: 8, backgroundColor: PRIMARY, borderRadius: 4 },
-  barFillOver: { backgroundColor: '#D97757' },
-  barFillNone: { backgroundColor: '#D1D5DB', width: 6 },
-
-  empty: { alignItems: 'center', paddingTop: 60 },
-  emptyEmoji: { fontSize: 52, marginBottom: 14 },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: TEXT, marginBottom: 8 },
-  emptyDesc: { fontSize: 15, color: TEXT_MUTED, textAlign: 'center', lineHeight: 23, marginBottom: 24 },
-  emptyBtn: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 15, paddingHorizontal: 32 },
-  emptyBtnText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-
-  disclaimer: {
-    fontSize: 12, color: TEXT_MUTED, lineHeight: 19, marginTop: 8, paddingHorizontal: 4,
-  },
-  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginBottom: 12 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
+  emptyEmoji: { fontSize: 54, marginBottom: 16 },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: TEXT, marginBottom: 10 },
+  emptyDesc: { fontSize: 16, color: TEXT_MUTED, textAlign: 'center', lineHeight: 25, marginBottom: 26 },
+  emptyBtn: { backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 17, paddingHorizontal: 40 },
+  emptyBtnText: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
 });
