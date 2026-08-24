@@ -59,7 +59,6 @@ function HistoryPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <SimpleHeader title="복약 기록" />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -204,44 +203,6 @@ function DayCard({
   );
 }
 
-function SimpleHeader({ title, onBack }: { title: string; onBack?: () => void }) {
-  return (
-    <View style={headerStyles.container}>
-      <View style={headerStyles.side} />
-      <Text style={headerStyles.title}>{title}</Text>
-      <View style={headerStyles.side} />
-    </View>
-  );
-}
-
-const headerStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    paddingHorizontal: 4,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  side: {
-    width: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  back: {
-    fontSize: 32,
-    color: '#111827',
-    lineHeight: 40,
-  },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-});
 
 const styles = StyleSheet.create({
   container: {

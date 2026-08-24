@@ -9,6 +9,7 @@ import { findIngredient } from '../data/ingredients';
 import { SLOTS, slotOf, type Pill, type SlotKey } from '../data/types';
 import { AD_IDS } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
+import { isOcrSupported, scanIngredientLabel } from '../src/ocr';
 import {
   BG, BORDER, CARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, TEXT_MUTED, TEXT_SUB,
 } from '../src/theme';
@@ -20,6 +21,8 @@ function ManagePage() {
   const { pills, maxPills, increaseSlot, updatePill, deletePill } = usePills();
   const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
   const [editing, setEditing] = useState<string | null>(null);
+  const [scanning, setScanning] = useState<string | null>(null);
+  const ocrSupported = isOcrSupported();
 
   const handleAddSlot = () => {
     show(async () => {
@@ -53,15 +56,53 @@ function ManagePage() {
     await updatePill({ ...pill, needsReview: false });
   };
 
+  /**
+   * 성분표를 찍어 성분을 채운다.
+   * 읽은 결과를 곧바로 저장하지 않고 무엇이 들어갈지 보여준 뒤 유저가 결정하게 한다 —
+   * 사진 인식은 틀릴 수 있고, 성분은 점검 결과를 좌우하는 값이라 확인 없이 덮으면 안 된다.
+   */
+  const handleScan = async (pill: Pill) => {
+    setScanning(pill.id);
+    const result = await scanIngredientLabel(pill.id);
+    setScanning(null);
+
+    if (!result.ok) {
+      if (!result.canceled) Alert.alert('읽지 못했어요', result.message);
+      return;
+    }
+    if (!result.readable || result.items.length === 0) {
+      Alert.alert(
+        '성분표를 찾지 못했어요',
+        result.note || '성분표가 잘 보이게, 글자에 초점을 맞춰서 다시 찍어주세요.',
+      );
+      return;
+    }
+
+    const preview = result.items
+      .map((it) => {
+        const meta = findIngredient(it.key);
+        return meta ? `${meta.name} ${it.amount}${meta.unit}` : null;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    Alert.alert(
+      `${result.items.length}가지를 읽었어요`,
+      `${preview}\n\n${result.note ? `\n${result.note}\n\n` : ''}이대로 넣을까요? 기존 성분은 교체돼요.`,
+      [
+        { text: '아니요', style: 'cancel' },
+        {
+          text: '넣기',
+          onPress: async () => {
+            await updatePill({ ...pill, ingredients: result.items, needsReview: false });
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.back}>‹ 뒤로</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>내 영양제</Text>
-        <View style={{ width: 60 }} />
-      </View>
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={styles.count}>{pills.length} / {maxPills}개 넣으셨어요</Text>
@@ -97,6 +138,18 @@ function ManagePage() {
                     <Text style={styles.reviewText}>
                       예전 기록이라 이름만 보고 성분을 짐작했어요. 제품 뒷면과 맞는지 확인해 주세요.
                     </Text>
+                    {ocrSupported && (
+                      <TouchableOpacity
+                        style={[styles.scanBtn, scanning === pill.id && styles.scanBtnOff]}
+                        onPress={() => handleScan(pill)}
+                        disabled={scanning !== null}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.scanBtnText}>
+                          {scanning === pill.id ? '읽는 중...' : '📷 성분표 찍어서 채우기'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity style={styles.reviewBtn} onPress={() => confirmReview(pill)} activeOpacity={0.85}>
                       <Text style={styles.reviewBtnText}>맞아요</Text>
                     </TouchableOpacity>
@@ -193,13 +246,6 @@ function ManagePage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: CARD,
-    borderBottomWidth: 1, borderBottomColor: BORDER,
-  },
-  back: { fontSize: 16, color: PRIMARY_DARK, fontWeight: '600', width: 60 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: TEXT },
   scroll: { padding: 16, paddingBottom: 40 },
   count: { fontSize: 14, color: TEXT_SUB, marginBottom: 12, fontWeight: '600' },
 
@@ -216,6 +262,9 @@ const styles = StyleSheet.create({
 
   reviewBox: { backgroundColor: '#EFF6FF', padding: 14, gap: 10 },
   reviewText: { fontSize: 13, color: '#1E3A8A', lineHeight: 20 },
+  scanBtn: { backgroundColor: '#1D4ED8', borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  scanBtnOff: { opacity: 0.55 },
+  scanBtnText: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
   reviewBtn: { backgroundColor: '#FFFFFF', borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
   reviewBtnText: { fontSize: 14, fontWeight: '700', color: '#1D4ED8' },
 

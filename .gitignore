@@ -26,3 +26,5 @@ Thumbs.db
 *.log
 npm-debug.log*
 .verify.js
+server/node_modules/
+server/.wrangler/

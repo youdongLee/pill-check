@@ -93,13 +93,6 @@ function AddPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.back}>‹ 뒤로</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>영양제 추가</Text>
-        <View style={{ width: 44 }} />
-      </View>
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text style={styles.lead}>제품을 고르면 성분이 자동으로 들어와요</Text>
@@ -238,13 +231,6 @@ function AddPage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: CARD,
-    borderBottomWidth: 1, borderBottomColor: BORDER,
-  },
-  back: { fontSize: 16, color: PRIMARY_DARK, fontWeight: '600', width: 60 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: TEXT },
   scroll: { padding: 16, paddingBottom: 40 },
   lead: { fontSize: 15, color: TEXT_SUB, marginBottom: 14 },
 
