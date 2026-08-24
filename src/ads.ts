@@ -15,11 +15,13 @@ export const AD_IDS = {
   recordFeed: 'ait.v2.live.e9cc2b606e7743f3',
   /** 영양제 관리 탭 배너 */
   manageBanner: 'ait.v2.live.2588455d864e4122',
-  /** 내 플랜 탭 피드 */
-  presetFeed: 'ait.v2.live.b6930667f8144517',
+  /** 점검 결과 화면 피드 — 체류가 가장 긴 자리 */
+  checkFeed: 'ait.v2.live.b6930667f8144517',
+  /** 영양제 추가 화면 피드 */
+  addFeed: 'ait.v2.live.14c7a31d3b0b46c9',
   /**
    * 리워드 전면형 — 순차 폴백 체인(useRewardAd가 실패 시에만 다음 그룹 시도).
-   * 쓰이는 곳: 영양제 슬롯 추가 · 플랜 슬롯 추가 · 주간 보너스 스탬프 발급.
+   * 쓰이는 곳: 영양제 자리 늘리기(기능 언락) · 일일/주간 보너스 도장 발급.
    */
   reward: ['ait.v2.live.7848babf27974479', 'ait.v2.live.f8f99d3e8bd5467e'],
 };

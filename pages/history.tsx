@@ -11,7 +11,9 @@ import {
   View,
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
-import { DailyRecord } from '../data/types';
+import { DailyRecord, SLOTS, slotOf } from '../data/types';
+
+const SLOT_ORDER = SLOTS.map((s) => s.key);
 import { formatKoreanDate, getDatesBack, todayStr } from '../data/utils';
 import { AD_IDS } from '../src/ads';
 
@@ -184,7 +186,7 @@ function DayCard({
         <View style={styles.dayDetail}>
           {intakes
             .slice()
-            .sort((a, b) => a.time.localeCompare(b.time))
+            .sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot))
             .map((intake, idx) => (
               <View key={idx} style={styles.intakeRow}>
                 <Text style={[styles.intakeCheck, intake.taken && styles.intakeCheckDone]}>
@@ -193,7 +195,7 @@ function DayCard({
                 <Text style={[styles.intakeName, !intake.taken && styles.intakeNameMissed]}>
                   {intake.pillName}
                 </Text>
-                <Text style={styles.intakeTime}>{intake.time}</Text>
+                <Text style={styles.intakeTime}>{slotOf(intake.slot).label}</Text>
               </View>
             ))}
         </View>

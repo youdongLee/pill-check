@@ -4,7 +4,6 @@ import { Component, PropsWithChildren } from 'react';
 import { ScrollView, Text } from 'react-native';
 import { context } from '../require.context';
 import { PillProvider } from '../stores/PillContext';
-import { PresetProvider } from '../stores/PresetContext';
 import { StampProvider } from '../stores/StampContext';
 
 class ErrorBoundary extends Component<PropsWithChildren, { error: Error | null }> {
@@ -30,9 +29,7 @@ function AppContainer({ children }: PropsWithChildren<InitialProps>) {
   return (
     <ErrorBoundary>
       <PillProvider>
-        <StampProvider>
-          <PresetProvider>{children}</PresetProvider>
-        </StampProvider>
+        <StampProvider>{children}</StampProvider>
       </PillProvider>
     </ErrorBoundary>
   );

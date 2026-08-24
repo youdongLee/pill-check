@@ -1,601 +1,308 @@
 import { createRoute } from '@granite-js/react-native';
-import React, { useState } from 'react';
+import { InlineAd } from '@apps-in-toss/framework';
+import React, { useMemo, useState } from 'react';
 import {
-  Modal,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
 } from 'react-native';
-import { Button } from '@toss/tds-react-native';
 import { usePills } from '../stores/PillContext';
-import { PILL_COLORS, PILL_EMOJIS, PRESET_TIMES } from '../data/constants';
+import { PRODUCTS, type Product } from '../data/products';
+import { findIngredient } from '../data/ingredients';
+import { SLOTS, type SlotKey } from '../data/types';
+import { recommendTiming, TIMING_LABEL } from '../src/analyze';
+import { AD_IDS } from '../src/ads';
+import {
+  BG, BORDER, CARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, TEXT_MUTED, TEXT_SUB,
+} from '../src/theme';
 
 export const Route = createRoute('/add', { component: AddPage });
 
-const PRIMARY = '#22C55E';
-const PRIMARY_DARK = '#16A34A';
+/** 성분 조합에 맞는 기본 시간대를 고른다 */
+function defaultSlotsFor(product: Product): SlotKey[] {
+  const { timing } = recommendTiming(product.ingredients.map((i) => i.key));
+  if (timing === 'bedtime') return ['bedtime'];
+  if (timing === 'empty') return ['morning'];
+  return ['morning'];
+}
 
 function AddPage() {
   const navigation = Route.useNavigation();
-  const { addPill } = usePills();
+  const { pills, maxPills, addPill } = usePills();
 
-  const [name, setName] = useState('');
-  const [emoji, setEmoji] = useState('💊');
-  const [color, setColor] = useState(PRIMARY);
-  const [selectedTimes, setSelectedTimes] = useState<string[]>([]);
-  const [note, setNote] = useState('');
+  const [product, setProduct] = useState<Product | null>(null);
+  const [customName, setCustomName] = useState('');
+  const [isCustom, setIsCustom] = useState(false);
+  const [slots, setSlots] = useState<SlotKey[]>(['morning']);
+  const [count, setCount] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [dosageAmount, setDosageAmount] = useState('');
-  const [dosageUnit, setDosageUnit] = useState('');
+  const atLimit = pills.length >= maxPills;
 
-  const [customTimes, setCustomTimes] = useState<{ label: string; time: string }[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [customLabel, setCustomLabel] = useState('');
-  const [customTime, setCustomTime] = useState('');
+  const advice = useMemo(() => {
+    if (!product) return null;
+    return recommendTiming(product.ingredients.map((i) => i.key));
+  }, [product]);
 
-  const isValid = name.trim().length > 0 && selectedTimes.length > 0;
-
-  const toggleTime = (time: string) => {
-    setSelectedTimes((prev) =>
-      prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time]
-    );
+  const pickProduct = (p: Product) => {
+    setProduct(p);
+    setIsCustom(false);
+    setCustomName('');
+    setSlots(defaultSlotsFor(p));
+    setCount(String(p.defaultCount));
+    Keyboard.dismiss();
   };
 
-  const handleAddCustomTime = () => {
-    const label = customLabel.trim();
-    const time = customTime.trim();
-    if (!label || !time) return;
-    const entry = { label, time };
-    setCustomTimes((prev) => [...prev, entry]);
-    setSelectedTimes((prev) => [...prev, time]);
-    setCustomLabel('');
-    setCustomTime('');
-    setShowModal(false);
+  const pickCustom = () => {
+    setProduct(null);
+    setIsCustom(true);
+    setSlots(['morning']);
+    setCount('');
   };
+
+  const toggleSlot = (key: SlotKey) => {
+    setSlots((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
+  };
+
+  const finalName = isCustom ? customName.trim() : product?.name ?? '';
+  const isValid = finalName.length > 0 && slots.length > 0;
 
   const handleSave = async () => {
     if (!isValid || saving) return;
+    if (atLimit) {
+      Alert.alert('자리가 꽉 찼어요', `지금은 ${maxPills}개까지 넣을 수 있어요.\n내 영양제 화면에서 광고를 보면 한 자리 늘릴 수 있어요.`, [
+        { text: '알겠어요', style: 'cancel' },
+        { text: '자리 늘리러 가기', onPress: () => navigation.navigate('/manage') },
+      ]);
+      return;
+    }
+    Keyboard.dismiss();
     setSaving(true);
+    const parsedCount = Number(count.replace(/[^0-9]/g, ''));
     await addPill({
-      name: name.trim(),
-      emoji,
-      color,
-      dosageAmount: dosageAmount.trim() || undefined,
-      dosageUnit: dosageUnit || undefined,
-      times: [...selectedTimes].sort(),
-      note: note.trim() || undefined,
+      name: finalName,
+      emoji: product?.emoji ?? '💊',
+      color: product?.color ?? PRIMARY,
+      productId: product?.id,
+      ingredients: product?.ingredients ?? [],
+      slots,
+      remaining: Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : undefined,
     });
-    navigation.goBack();
+    setSaving(false);
+    navigation.navigate('/');
   };
-
-  const allTimes = [...PRESET_TIMES, ...customTimes];
 
   return (
     <SafeAreaView style={styles.container}>
-      <SimpleHeader title="영양제 추가" />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={styles.back}>‹ 뒤로</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>영양제 추가</Text>
+        <View style={{ width: 44 }} />
+      </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Preview */}
-        <View style={styles.previewCard}>
-          <View style={[styles.previewIcon, { backgroundColor: color + '22' }]}>
-            <Text style={styles.previewEmoji}>{emoji}</Text>
-          </View>
-          <View>
-            <Text style={styles.previewName}>{name || '영양제 이름'}</Text>
-            <Text style={styles.previewTimes}>
-              {selectedTimes.length > 0 ? selectedTimes.sort().join(', ') : '복용 시간 선택'}
-            </Text>
-          </View>
-          <View style={[styles.previewDot, { backgroundColor: color }]} />
-        </View>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Text style={styles.lead}>제품을 고르면 성분이 자동으로 들어와요</Text>
 
-        {/* Name */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>이름 *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="예) 비타민 C, 오메가3, 마그네슘"
-            placeholderTextColor="#9CA3AF"
-            value={name}
-            onChangeText={setName}
-          />
-        </View>
-
-        {/* Emoji */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>아이콘</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.emojiRow}>
-              {PILL_EMOJIS.map((e) => (
-                <TouchableOpacity
-                  key={e}
-                  style={[styles.emojiChip, emoji === e && styles.emojiChipSelected]}
-                  onPress={() => setEmoji(e)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.emojiText}>{e}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-
-        {/* Color */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>색상</Text>
-          <View style={styles.colorRow}>
-            {PILL_COLORS.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.colorChip, { backgroundColor: c }, color === c && styles.colorChipSelected]}
-                onPress={() => setColor(c)}
-                activeOpacity={0.8}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* Dosage */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>용량 / 개수 (선택)</Text>
-          <View style={styles.dosageRow}>
-            <TextInput
-              style={styles.dosageInput}
-              placeholder="예) 1, 500"
-              placeholderTextColor="#9CA3AF"
-              value={dosageAmount}
-              onChangeText={setDosageAmount}
-              keyboardType="numeric"
-            />
-            <View style={styles.dosageUnits}>
-              {['알', '개', 'mg', 'ml'].map((unit) => (
-                <TouchableOpacity
-                  key={unit}
-                  style={[styles.unitChip, dosageUnit === unit && styles.unitChipSelected]}
-                  onPress={() => setDosageUnit(dosageUnit === unit ? '' : unit)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.unitChipText, dosageUnit === unit && styles.unitChipTextSelected]}>
-                    {unit}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        {/* Times */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>복용 시간 * (중복 선택 가능)</Text>
-          <View style={styles.timeGrid}>
-            {allTimes.map(({ label, time }) => {
-              const selected = selectedTimes.includes(time);
+        {/* 제품 고르기 */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>많이 찾는 제품</Text>
+          <View style={styles.chipWrap}>
+            {PRODUCTS.map((p) => {
+              const on = product?.id === p.id;
               return (
                 <TouchableOpacity
-                  key={time}
-                  style={[styles.timeChip, selected && styles.timeChipSelected]}
-                  onPress={() => toggleTime(time)}
-                  activeOpacity={0.7}
+                  key={p.id}
+                  style={[styles.chip, on && styles.chipOn]}
+                  onPress={() => pickProduct(p)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={[styles.timeChipLabel, selected && styles.timeChipLabelSelected]}>
-                    {label}
-                  </Text>
-                  <Text style={[styles.timeChipTime, selected && styles.timeChipTimeSelected]}>
-                    {time}
-                  </Text>
+                  <Text style={styles.chipEmoji}>{p.emoji}</Text>
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{p.name}</Text>
                 </TouchableOpacity>
               );
             })}
-            <TouchableOpacity
-              style={styles.timeChipAdd}
-              onPress={() => setShowModal(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.timeChipAddText}>+</Text>
-              <Text style={styles.timeChipAddLabel}>직접 추가</Text>
+            <TouchableOpacity style={[styles.chip, isCustom && styles.chipOn]} onPress={pickCustom} activeOpacity={0.8}>
+              <Text style={styles.chipEmoji}>✏️</Text>
+              <Text style={[styles.chipText, isCustom && styles.chipTextOn]}>목록에 없어요</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Note */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>메모 (선택)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="예) 식후 30분, 물과 함께"
-            placeholderTextColor="#9CA3AF"
-            value={note}
-            onChangeText={setNote}
-          />
+        {/* 직접 입력 */}
+        {isCustom && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>영양제 이름</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="예) 프로폴리스"
+              placeholderTextColor={TEXT_MUTED}
+              value={customName}
+              onChangeText={setCustomName}
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
+              autoFocus
+            />
+            <Text style={styles.hint}>
+              성분을 모르면 비워두셔도 돼요. 대신 겹치는 성분 점검은 못 해드려요.
+            </Text>
+          </View>
+        )}
+
+        {/* 성분 미리보기 */}
+        {product && (
+          <View style={[styles.card, styles.cardHero]}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.productName}>{product.emoji} {product.name}</Text>
+            </View>
+            <Text style={styles.cardLabel}>한 번에 드시는 양에 들어있는 성분</Text>
+            <View style={styles.ingWrap}>
+              {product.ingredients.map((ing) => {
+                const meta = findIngredient(ing.key);
+                if (!meta) return null;
+                return (
+                  <View key={ing.key} style={styles.ingChip}>
+                    <Text style={styles.ingText}>{meta.name} {ing.amount}{meta.unit}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* 남은 개수 */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>몇 알 들어있나요? <Text style={styles.optional}>(선택)</Text></Text>
+          <View style={styles.countRow}>
+            <TextInput
+              style={styles.countInput}
+              placeholder="60"
+              placeholderTextColor={TEXT_MUTED}
+              value={count}
+              onChangeText={setCount}
+              keyboardType="number-pad"
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
+              maxLength={4}
+            />
+            <Text style={styles.countUnit}>알</Text>
+          </View>
+          <Text style={styles.hint}>넣어두시면 다 떨어지기 전에 알려드려요</Text>
         </View>
 
-        <View style={{ height: 16 }} />
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Button
-          type="primary"
-          size="big"
-          display="full"
-          onPress={handleSave}
-          disabled={!isValid}
-          loading={saving}
-        >
-          저장
-        </Button>
-      </View>
-
-      {/* Custom time modal */}
-      <Modal visible={showModal} transparent animationType="fade" onRequestClose={() => setShowModal(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowModal(false)}>
-          <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
-            <Text style={styles.modalTitle}>복용 시간 추가</Text>
-            <Text style={styles.modalLabel}>명칭</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="예) 운동 후, 간식 후"
-              placeholderTextColor="#9CA3AF"
-              value={customLabel}
-              onChangeText={setCustomLabel}
-            />
-            <Text style={styles.modalLabel}>시간</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="예) 15:00"
-              placeholderTextColor="#9CA3AF"
-              value={customTime}
-              onChangeText={setCustomTime}
-              keyboardType="numbers-and-punctuation"
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowModal(false)} activeOpacity={0.7}>
-                <Text style={styles.modalCancelText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirm, (!customLabel.trim() || !customTime.trim()) && styles.modalConfirmDisabled]}
-                onPress={handleAddCustomTime}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalConfirmText}>추가</Text>
-              </TouchableOpacity>
+        {/* 시간대 */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>언제 드실래요?</Text>
+          {advice?.reason && (
+            <View style={styles.adviceBox}>
+              <Text style={styles.adviceText}>
+                💡 {advice.reason}
+              </Text>
+              <Text style={styles.adviceSub}>추천: {TIMING_LABEL[advice.timing]}</Text>
             </View>
-          </TouchableOpacity>
+          )}
+          <View style={styles.slotRow}>
+            {SLOTS.map((s) => {
+              const on = slots.includes(s.key);
+              return (
+                <TouchableOpacity
+                  key={s.key}
+                  style={[styles.slotChip, on && styles.slotChipOn]}
+                  onPress={() => toggleSlot(s.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.slotEmoji}>{s.emoji}</Text>
+                  <Text style={[styles.slotLabel, on && styles.slotLabelOn]}>{s.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.saveBtn, !isValid && styles.saveBtnOff]}
+          onPress={handleSave}
+          disabled={!isValid || saving}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.saveBtnText}>{saving ? '넣는 중...' : '추가하기'}</Text>
         </TouchableOpacity>
-      </Modal>
+
+        <View style={styles.ad}>
+          <InlineAd adGroupId={AD_IDS.addFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SimpleHeader({ title, onBack, rightLabel, onRight }: {
-  title: string;
-  onBack?: () => void;
-  rightLabel?: string;
-  onRight?: () => void;
-}) {
-  return (
-    <View style={headerStyles.container}>
-      <View style={headerStyles.side} />
-      <Text style={headerStyles.title}>{title}</Text>
-      <TouchableOpacity onPress={onRight} style={headerStyles.side} activeOpacity={0.7}>
-        <Text style={headerStyles.right}>{rightLabel ?? ''}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const headerStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    paddingHorizontal: 4,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  side: {
-    width: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  back: {
-    fontSize: 32,
-    color: '#111827',
-    lineHeight: 40,
-  },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  right: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#22C55E',
-  },
-});
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  container: { flex: 1, backgroundColor: BG },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: CARD,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
   },
-  scroll: {
-    flex: 1,
+  back: { fontSize: 16, color: PRIMARY_DARK, fontWeight: '600', width: 60 },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: TEXT },
+  scroll: { padding: 16, paddingBottom: 40 },
+  lead: { fontSize: 15, color: TEXT_SUB, marginBottom: 14 },
+
+  card: {
+    backgroundColor: CARD, borderRadius: 16, borderWidth: 1, borderColor: BORDER,
+    padding: 16, marginBottom: 12,
   },
-  scrollContent: {
-    padding: 20,
+  cardHero: { borderColor: PRIMARY, borderWidth: 1.5 },
+  cardLabel: { fontSize: 14, fontWeight: '700', color: TEXT, marginBottom: 10 },
+  optional: { fontWeight: '400', color: TEXT_MUTED, fontSize: 13 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  productName: { fontSize: 18, fontWeight: '800', color: TEXT },
+
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 22,
+    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent',
   },
-  previewCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  previewIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  previewEmoji: {
-    fontSize: 24,
-  },
-  previewName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  previewTimes: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  previewDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: 'auto',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#374151',
-    marginBottom: 10,
-  },
-  emojiRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 4,
-  },
-  emojiChip: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  emojiChipSelected: {
-    borderColor: PRIMARY,
-    backgroundColor: '#DCFCE7',
-  },
-  emojiText: {
-    fontSize: 22,
-  },
+  chipOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
+  chipEmoji: { fontSize: 15 },
+  chipText: { fontSize: 14, fontWeight: '600', color: '#4B5563' },
+  chipTextOn: { color: PRIMARY_DARK },
+
   input: {
-    width: '100%',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    fontSize: 15,
-    color: '#111827',
+    backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
+    fontSize: 16, color: TEXT,
   },
-  colorRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  hint: { fontSize: 13, color: TEXT_MUTED, marginTop: 8, lineHeight: 19 },
+
+  ingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  ingChip: { backgroundColor: '#F3F4F6', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  ingText: { fontSize: 13, color: '#4B5563', fontWeight: '500' },
+
+  countRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  countInput: {
+    width: 100, backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
+    fontSize: 18, fontWeight: '700', color: TEXT, textAlign: 'center',
   },
-  colorChip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 3,
-    borderColor: 'transparent',
+  countUnit: { fontSize: 16, color: TEXT_SUB, fontWeight: '600' },
+
+  adviceBox: { backgroundColor: PRIMARY_LIGHT, borderRadius: 12, padding: 12, marginBottom: 12 },
+  adviceText: { fontSize: 14, color: '#14603A', fontWeight: '600', lineHeight: 20 },
+  adviceSub: { fontSize: 13, color: PRIMARY_DARK, marginTop: 4, fontWeight: '700' },
+
+  slotRow: { flexDirection: 'row', gap: 8 },
+  slotChip: {
+    flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12,
+    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent',
   },
-  colorChipSelected: {
-    borderColor: '#111827',
-  },
-  dosageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  dosageInput: {
-    width: 90,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#111827',
-  },
-  dosageUnits: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  unitChip: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    alignItems: 'center',
-  },
-  unitChipSelected: {
-    backgroundColor: '#DCFCE7',
-    borderColor: PRIMARY,
-  },
-  unitChipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-  unitChipTextSelected: {
-    color: PRIMARY_DARK,
-  },
-  timeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  timeChip: {
-    width: '47%',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    alignItems: 'center',
-  },
-  timeChipSelected: {
-    backgroundColor: '#DCFCE7',
-    borderColor: PRIMARY,
-  },
-  timeChipLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4B5563',
-    marginBottom: 2,
-  },
-  timeChipLabelSelected: {
-    color: PRIMARY_DARK,
-  },
-  timeChipTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  timeChipTimeSelected: {
-    color: PRIMARY,
-    fontWeight: '600',
-  },
-  timeChipAdd: {
-    width: '47%',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: '#D1D5DB',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-  },
-  timeChipAddText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#9CA3AF',
-    lineHeight: 22,
-  },
-  timeChipAddLabel: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  footer: {
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-    paddingTop: 12,
-    backgroundColor: '#F9FAFB',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCard: {
-    width: '85%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-  },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  modalLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
-  },
-  modalInput: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#111827',
-    marginBottom: 16,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  modalCancel: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  modalConfirm: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-  },
-  modalConfirmDisabled: {
-    backgroundColor: '#D1D5DB',
-  },
-  modalConfirmText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+  slotChipOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
+  slotEmoji: { fontSize: 18, marginBottom: 3 },
+  slotLabel: { fontSize: 13, fontWeight: '600', color: '#4B5563' },
+  slotLabelOn: { color: PRIMARY_DARK, fontWeight: '800' },
+
+  saveBtn: { backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 17, alignItems: 'center', marginTop: 4 },
+  saveBtnOff: { backgroundColor: '#D1D5DB' },
+  saveBtnText: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+
+  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginTop: 20 },
 });

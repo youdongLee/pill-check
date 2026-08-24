@@ -1,840 +1,263 @@
 import { createRoute } from '@granite-js/react-native';
 import { InlineAd } from '@apps-in-toss/framework';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  Alert,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
+  Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
+import { findIngredient } from '../data/ingredients';
+import { SLOTS, slotOf, type Pill, type SlotKey } from '../data/types';
 import { AD_IDS } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
-import { Pill } from '../data/types';
-import { formatTime } from '../data/utils';
-import { PRESET_TIMES } from '../data/constants';
+import {
+  BG, BORDER, CARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, TEXT_MUTED, TEXT_SUB,
+} from '../src/theme';
 
 export const Route = createRoute('/manage', { component: ManagePage });
 
-const PRIMARY = '#22C55E';
-const PRIMARY_DARK = '#16A34A';
-const PRIMARY_LIGHT = '#DCFCE7';
-
-const ICONS = [
-  { emoji: '💊', color: '#22C55E' },
-  { emoji: '💉', color: '#3B82F6' },
-  { emoji: '🏥', color: '#14B8A6' },
-];
-const UNITS = ['알', 'mg', 'ml'];
-const NAME_PRESETS = ['종합 비타민', '비타민 B', '비타민 C', '비타민 D', '오메가3', '마그네슘', '칼슘'];
-
 function ManagePage() {
   const navigation = Route.useNavigation();
-  const { pills, maxSlots, increaseSlot, decreaseSlot, addPill, deletePill, updatePill } = usePills();
-
-  // --- Reward ad (공용 훅: 로드 1개만 유지 + 순차 폴백) ---
+  const { pills, maxPills, increaseSlot, updatePill, deletePill } = usePills();
   const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
-  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
 
-  const handleWatchAd = () => {
-    setShowSlotModal(false);
+  const handleAddSlot = () => {
     show(async () => {
       await increaseSlot();
-      Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
+      Alert.alert('자리를 늘렸어요', '영양제를 하나 더 넣을 수 있어요.');
     });
   };
 
-  const usedSlots = pills.reduce((acc, p) => acc + p.times.length, 0);
-  const availableSlots = maxSlots - usedSlots;
-
-  // --- Quick add state ---
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [selectedName, setSelectedName] = useState('');
-  const [isCustomName, setIsCustomName] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState(ICONS[0]);
-  const [selectedUnit, setSelectedUnit] = useState('');
-  const [dosageAmount, setDosageAmount] = useState('');
-  const [selectedTimes, setSelectedTimes] = useState<string[]>([]);
-  const [addSaving, setAddSaving] = useState(false);
-  const [addCustomTimeInput, setAddCustomTimeInput] = useState('');
-  const [showAddCustomTimeField, setShowAddCustomTimeField] = useState(false);
-
-  const finalName = isCustomName ? customName : selectedName;
-  const isAddValid = finalName.trim().length > 0 && selectedTimes.length > 0;
-
-  const resetAddForm = () => {
-    setSelectedName('');
-    setIsCustomName(false);
-    setCustomName('');
-    setSelectedIcon(ICONS[0]);
-    setSelectedUnit('');
-    setDosageAmount('');
-    setSelectedTimes([]);
-    setAddCustomTimeInput('');
-    setShowAddCustomTimeField(false);
+  const handleDelete = (pill: Pill) => {
+    Alert.alert(`"${pill.name}" 지울까요?`, '복용 기록에서도 빠져요.', [
+      { text: '아니요', style: 'cancel' },
+      { text: '지우기', style: 'destructive', onPress: () => deletePill(pill.id) },
+    ]);
   };
 
-  const toggleTime = (time: string) => {
-    setSelectedTimes((prev) =>
-      prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time]
-    );
-  };
-
-  const addCustomTimeForAdd = () => {
-    const t = addCustomTimeInput.trim();
-    if (!/^\d{2}:\d{2}$/.test(t)) return;
-    if (selectedTimes.includes(t)) { setAddCustomTimeInput(''); setShowAddCustomTimeField(false); return; }
-    if (availableSlots - selectedTimes.length <= 0) return;
-    setSelectedTimes((prev) => [...prev, t]);
-    setAddCustomTimeInput('');
-    setShowAddCustomTimeField(false);
-    Keyboard.dismiss();
-  };
-
-  const handleAddSave = async () => {
-    if (!isAddValid || addSaving) return;
-    Keyboard.dismiss();
-    setAddSaving(true);
-    await addPill({
-      name: finalName.trim(),
-      emoji: selectedIcon.emoji,
-      color: selectedIcon.color,
-      dosageAmount: dosageAmount.trim() || undefined,
-      dosageUnit: selectedUnit || undefined,
-      times: [...selectedTimes].sort(),
-    });
-    setAddSaving(false);
-    setShowQuickAdd(false);
-  };
-
-  const handleAddPress = () => {
-    if (usedSlots >= maxSlots) {
-      setShowSlotModal(true);
-    } else {
-      resetAddForm();
-      setShowQuickAdd(true);
-    }
-  };
-
-  const handleDelete = (pill: Pill, time: string) => {
-    const isLastSlot = pill.times.length === 1;
-    Alert.alert(
-      isLastSlot ? `"${pill.name}" 삭제` : `"${pill.name}" (${time}) 삭제`,
-      isLastSlot
-        ? '삭제하면 복약 기록에서도 제외돼요. 정말 삭제할까요?'
-        : '이 시간대만 삭제돼요. 나머지 시간대는 유지돼요.',
-      [
-        { text: '취소', style: 'cancel' },
-        {
-          text: '삭제',
-          style: 'destructive',
-          onPress: async () => {
-            if (isLastSlot) {
-              await deletePill(pill.id);
-            } else {
-              await Promise.all([
-                updatePill({ ...pill, times: pill.times.filter((t) => t !== time) }),
-                decreaseSlot(),
-              ]);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // --- Edit bottom sheet ---
-  const [editingPill, setEditingPill] = useState<Pill | null>(null);
-  const [editingTime, setEditingTime] = useState<string>('');
-  const [editName, setEditName] = useState('');
-  const [editIsCustomName, setEditIsCustomName] = useState(false);
-  const [editCustomName, setEditCustomName] = useState('');
-  const [editIcon, setEditIcon] = useState(ICONS[0]);
-  const [editDosageAmount, setEditDosageAmount] = useState('');
-  const [editUnit, setEditUnit] = useState('');
-  const [editTimes, setEditTimes] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [customTimeInput, setCustomTimeInput] = useState('');
-  const [showCustomTimeField, setShowCustomTimeField] = useState(false);
-
-  const addCustomTime = () => {
-    const t = customTimeInput.trim();
-    if (!/^\d{2}:\d{2}$/.test(t)) return;
-    if (editTimes.includes(t)) { setCustomTimeInput(''); setShowCustomTimeField(false); return; }
-    if (editAvailableSlots - editTimes.length <= 0) return;
-    setEditTimes((prev) => [...prev, t]);
-    setCustomTimeInput('');
-    setShowCustomTimeField(false);
-    Keyboard.dismiss();
-  };
-
-  const openEdit = (pill: Pill, time: string) => {
-    const matchedPreset = NAME_PRESETS.includes(pill.name);
-    setEditName(matchedPreset ? pill.name : '');
-    setEditIsCustomName(!matchedPreset);
-    setEditCustomName(matchedPreset ? '' : pill.name);
-    const icon = ICONS.find((i) => i.emoji === pill.emoji) ?? ICONS[0];
-    setEditIcon(icon);
-    setEditDosageAmount(pill.dosageAmount ?? '');
-    setEditUnit(pill.dosageUnit ?? '');
-    setEditTimes([time]);
-    setEditingTime(time);
-    setEditingPill(pill);
-    setCustomTimeInput('');
-    setShowCustomTimeField(false);
-  };
-
-  const closeEdit = () => {
-    Keyboard.dismiss();
-    setEditingPill(null);
-  };
-
-  const finalEditName = editIsCustomName ? editCustomName : editName;
-  const editIsValid = finalEditName.trim().length > 0 && editTimes.length > 0;
-
-  // slots available when editing: free up the 1 slot being edited
-  const editAvailableSlots = maxSlots - (usedSlots - 1);
-
-  const toggleEditTime = (time: string) => {
-    setEditTimes((prev) =>
-      prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time]
-    );
-  };
-
-  const handleEditSave = async () => {
-    if (!editingPill || !editIsValid || saving) return;
-    if (editTimes.length > editAvailableSlots) {
-      Alert.alert(
-        '슬롯이 부족해요',
-        `선택한 시간대 ${editTimes.length}개 중 ${editAvailableSlots}개 슬롯만 남아있어요.`,
-        [{ text: '확인' }]
-      );
+  const toggleSlot = async (pill: Pill, key: SlotKey) => {
+    const next = pill.slots.includes(key) ? pill.slots.filter((s) => s !== key) : [...pill.slots, key];
+    if (next.length === 0) {
+      Alert.alert('시간대는 하나 이상 골라주세요');
       return;
     }
-    Keyboard.dismiss();
-    setSaving(true);
-    const newTimes = [
-      ...editingPill.times.filter((t) => t !== editingTime),
-      ...editTimes,
-    ].sort();
-    await updatePill({
-      ...editingPill,
-      name: finalEditName.trim(),
-      emoji: editIcon.emoji,
-      color: editIcon.color,
-      dosageAmount: editDosageAmount.trim() || undefined,
-      dosageUnit: editUnit || undefined,
-      times: newTimes,
-    });
-    setSaving(false);
-    setEditingPill(null);
+    await updatePill({ ...pill, slots: next });
   };
 
-  // Flatten to (pill, time) items
-  const timeSlotItems = pills.flatMap((pill) =>
-    pill.times.map((time) => ({ pill, time }))
-  );
+  const setRemaining = async (pill: Pill, text: string) => {
+    const n = Number(text.replace(/[^0-9]/g, ''));
+    await updatePill({ ...pill, remaining: Number.isFinite(n) && n > 0 ? n : undefined });
+  };
+
+  const confirmReview = async (pill: Pill) => {
+    await updatePill({ ...pill, needsReview: false });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <SimpleHeader
-        title="영양제 관리"
-      />
-
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {pills.length === 0 ? (
-          <EmptyState onAdd={handleAddPress} />
-        ) : (
-          <>
-            <Text style={styles.sectionHint}>
-              {usedSlots} / {maxSlots} 슬롯 사용 중
-            </Text>
-            {timeSlotItems.map(({ pill, time }) => (
-              <TimeSlotCard
-                key={`${pill.id}-${time}`}
-                pill={pill}
-                time={time}
-                onEdit={() => openEdit(pill, time)}
-                onDelete={() => handleDelete(pill, time)}
-              />
-            ))}
-          </>
-        )}
-      </ScrollView>
-
-      {/* 배너 광고 */}
-      <View style={styles.banner}>
-        <InlineAd
-          adGroupId={AD_IDS.manageBanner}
-          theme="light"
-          tone="grey"
-          variant="expanded"
-          impressFallbackOnMount={true}
-        />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={styles.back}>‹ 뒤로</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>내 영양제</Text>
+        <View style={{ width: 60 }} />
       </View>
 
-      {pills.length > 0 && (
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddPress} activeOpacity={0.85}>
-            <Text style={styles.addButtonText}>+ 영양제 추가</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Text style={styles.count}>{pills.length} / {maxPills}개 넣으셨어요</Text>
 
-      {/* 슬롯 부족 모달 */}
-      <Modal visible={showSlotModal} transparent animationType="fade" onRequestClose={() => setShowSlotModal(false)}>
-        <TouchableOpacity style={slotStyles.overlay} activeOpacity={1} onPress={() => setShowSlotModal(false)}>
-          <TouchableOpacity style={slotStyles.card} activeOpacity={1}>
-            <Text style={slotStyles.emoji}>🎁</Text>
-            <Text style={slotStyles.title}>영양제 슬롯이 꽉 찼어요</Text>
-            <Text style={slotStyles.desc}>
-              현재 최대 {maxSlots}개까지 등록할 수 있어요.{'\n'}
-              짧은 광고를 시청하면 슬롯을 1개 더 추가할 수 있어요.
-            </Text>
-            <TouchableOpacity
-              style={[slotStyles.watchBtn, !adLoaded && slotStyles.watchBtnDisabled]}
-              onPress={handleWatchAd}
-              disabled={!adLoaded}
-              activeOpacity={0.85}
-            >
-              <Text style={slotStyles.watchBtnText}>
-                {adLoaded ? '광고 보고 슬롯 추가하기' : '광고 준비 중...'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={slotStyles.cancelBtn} onPress={() => setShowSlotModal(false)} activeOpacity={0.7}>
-              <Text style={slotStyles.cancelBtnText}>취소</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
+        {pills.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyEmoji}>💊</Text>
+            <Text style={styles.emptyTitle}>아직 없어요</Text>
+          </View>
+        ) : (
+          pills.map((pill) => {
+            const open = editing === pill.id;
+            return (
+              <View key={pill.id} style={[styles.card, pill.needsReview && styles.cardReview]}>
+                <TouchableOpacity
+                  style={styles.cardHead}
+                  onPress={() => setEditing(open ? null : pill.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.pillEmoji}>{pill.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pillName}>{pill.name}</Text>
+                    <Text style={styles.pillSub}>
+                      {pill.slots.map((s) => slotOf(s).label).join(' · ')}
+                      {pill.remaining !== undefined ? ` · ${pill.remaining}알 남음` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.chevron}>{open ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
+
+                {pill.needsReview && (
+                  <View style={styles.reviewBox}>
+                    <Text style={styles.reviewText}>
+                      예전 기록이라 이름만 보고 성분을 짐작했어요. 제품 뒷면과 맞는지 확인해 주세요.
+                    </Text>
+                    <TouchableOpacity style={styles.reviewBtn} onPress={() => confirmReview(pill)} activeOpacity={0.85}>
+                      <Text style={styles.reviewBtnText}>맞아요</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {open && (
+                  <View style={styles.editBox}>
+                    {pill.ingredients.length > 0 ? (
+                      <>
+                        <Text style={styles.editLabel}>들어있는 성분</Text>
+                        <View style={styles.ingWrap}>
+                          {pill.ingredients.map((ing) => {
+                            const meta = findIngredient(ing.key);
+                            if (!meta) return null;
+                            return (
+                              <View key={ing.key} style={styles.ingChip}>
+                                <Text style={styles.ingText}>{meta.name} {ing.amount}{meta.unit}</Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </>
+                    ) : (
+                      <Text style={styles.noIng}>성분 정보가 없어 점검에서 빠져요</Text>
+                    )}
+
+                    <Text style={styles.editLabel}>드시는 시간</Text>
+                    <View style={styles.slotRow}>
+                      {SLOTS.map((s) => {
+                        const on = pill.slots.includes(s.key);
+                        return (
+                          <TouchableOpacity
+                            key={s.key}
+                            style={[styles.slotChip, on && styles.slotChipOn]}
+                            onPress={() => toggleSlot(pill, s.key)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.slotEmoji}>{s.emoji}</Text>
+                            <Text style={[styles.slotLabel, on && styles.slotLabelOn]}>{s.label}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <Text style={styles.editLabel}>남은 개수</Text>
+                    <View style={styles.countRow}>
+                      <TextInput
+                        style={styles.countInput}
+                        placeholder="—"
+                        placeholderTextColor={TEXT_MUTED}
+                        defaultValue={pill.remaining !== undefined ? String(pill.remaining) : ''}
+                        onEndEditing={(e) => setRemaining(pill, e.nativeEvent.text)}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        maxLength={4}
+                      />
+                      <Text style={styles.countUnit}>알</Text>
+                    </View>
+
+                    <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(pill)} activeOpacity={0.8}>
+                      <Text style={styles.deleteBtnText}>이 영양제 지우기</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            );
+          })
+        )}
+
+        <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('/add')} activeOpacity={0.85}>
+          <Text style={styles.addBtnText}>+ 영양제 추가하기</Text>
         </TouchableOpacity>
-      </Modal>
 
-      {/* 추가 바텀 시트 */}
-      <Modal visible={showQuickAdd} transparent animationType="slide" onRequestClose={() => setShowQuickAdd(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); setShowQuickAdd(false); }}>
-            <View style={editStyles.overlay}>
-              <TouchableWithoutFeedback onPress={() => {}}>
-                <View style={editStyles.card}>
-                  <View style={editStyles.handle} />
-                  <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                    <Text style={editStyles.title}>영양제 추가</Text>
+        {/* 리워드 = 기능 언락. 포인트 지급 아님 */}
+        <TouchableOpacity
+          style={[styles.slotAddBtn, (playing || !adLoaded) && styles.slotAddBtnOff]}
+          onPress={handleAddSlot}
+          disabled={playing || !adLoaded}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.slotAddText}>
+            {playing ? '광고 재생 중...' : adLoaded ? '📺 광고 보고 자리 한 칸 늘리기' : '광고 준비 중...'}
+          </Text>
+        </TouchableOpacity>
 
-                    <Text style={editStyles.label}>이름</Text>
-                    <View style={editStyles.chipWrap}>
-                      {NAME_PRESETS.map((n) => (
-                        <TouchableOpacity
-                          key={n}
-                          style={[editStyles.chip, !isCustomName && selectedName === n && editStyles.chipSelected]}
-                          onPress={() => { setSelectedName(n); setIsCustomName(false); Keyboard.dismiss(); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[editStyles.chipText, !isCustomName && selectedName === n && editStyles.chipTextSelected]}>{n}</Text>
-                        </TouchableOpacity>
-                      ))}
-                      <TouchableOpacity
-                        style={[editStyles.chip, isCustomName && editStyles.chipSelected]}
-                        onPress={() => { setIsCustomName(true); setSelectedName(''); }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[editStyles.chipText, isCustomName && editStyles.chipTextSelected]}>직접입력</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {isCustomName && (
-                      <TextInput
-                        style={editStyles.nameInput}
-                        placeholder="영양제 이름 입력"
-                        placeholderTextColor="#9CA3AF"
-                        value={customName}
-                        onChangeText={setCustomName}
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                        autoFocus
-                      />
-                    )}
-
-                    <Text style={editStyles.label}>아이콘</Text>
-                    <View style={editStyles.iconRow}>
-                      {ICONS.map((icon) => (
-                        <TouchableOpacity
-                          key={icon.emoji}
-                          style={[editStyles.iconChip, selectedIcon.emoji === icon.emoji && { borderColor: icon.color, backgroundColor: icon.color + '18' }]}
-                          onPress={() => setSelectedIcon(icon)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={editStyles.iconEmoji}>{icon.emoji}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <Text style={editStyles.label}>단위<Text style={editStyles.optional}>(선택)</Text></Text>
-                    <View style={editStyles.dosageRow}>
-                      <TextInput
-                        style={editStyles.dosageInput}
-                        placeholder="수량"
-                        placeholderTextColor="#9CA3AF"
-                        value={dosageAmount}
-                        onChangeText={setDosageAmount}
-                        keyboardType="numeric"
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                      />
-                      {UNITS.map((unit) => (
-                        <TouchableOpacity
-                          key={unit}
-                          style={[editStyles.unitChip, selectedUnit === unit && editStyles.unitChipSelected]}
-                          onPress={() => { setSelectedUnit(selectedUnit === unit ? '' : unit); Keyboard.dismiss(); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[editStyles.unitChipText, selectedUnit === unit && editStyles.unitChipTextSelected]}>{unit}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <Text style={editStyles.label}>
-                      복용 시간{'  '}
-                      <Text style={[editStyles.optional, availableSlots - selectedTimes.length < 0 && { color: '#EF4444' }]}>
-                        (잔여 슬롯 {Math.max(0, availableSlots - selectedTimes.length)}개)
-                      </Text>
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={editStyles.timeChipWrap}>
-                      {PRESET_TIMES.map(({ label, time }) => {
-                        const sel = selectedTimes.includes(time);
-                        const noSlot = !sel && availableSlots - selectedTimes.length <= 0;
-                        return (
-                          <TouchableOpacity
-                            key={time}
-                            style={[editStyles.timeChip, sel && editStyles.timeChipSelected, noSlot && editStyles.timeChipDisabled]}
-                            onPress={() => { if (!noSlot) { toggleTime(time); Keyboard.dismiss(); } }}
-                            activeOpacity={noSlot ? 1 : 0.7}
-                          >
-                            <Text style={[editStyles.timeChipLabel, sel && editStyles.timeChipLabelSelected, noSlot && editStyles.timeChipDisabledText]}>{label}</Text>
-                            <Text style={[editStyles.timeChipTime, sel && editStyles.timeChipTimeSelected, noSlot && editStyles.timeChipDisabledText]}>{time}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      {selectedTimes.filter((t) => !PRESET_TIMES.some((p) => p.time === t)).map((t) => (
-                        <TouchableOpacity
-                          key={t}
-                          style={[editStyles.timeChip, editStyles.timeChipSelected]}
-                          onPress={() => toggleTime(t)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[editStyles.timeChipLabel, editStyles.timeChipLabelSelected]}>직접 입력</Text>
-                          <Text style={[editStyles.timeChipTime, editStyles.timeChipTimeSelected]}>{t}</Text>
-                        </TouchableOpacity>
-                      ))}
-                      {(() => {
-                        const noSlot = availableSlots - selectedTimes.length <= 0;
-                        return (
-                          <TouchableOpacity
-                            style={[editStyles.timeChip, showAddCustomTimeField && editStyles.timeChipSelected, noSlot && editStyles.timeChipDisabled]}
-                            onPress={() => { if (!noSlot) setShowAddCustomTimeField(true); }}
-                            activeOpacity={noSlot ? 1 : 0.7}
-                          >
-                            <Text style={[editStyles.timeChipLabel, showAddCustomTimeField && editStyles.timeChipLabelSelected, noSlot && editStyles.timeChipDisabledText]}>직접 입력</Text>
-                            <Text style={[editStyles.timeChipTime, showAddCustomTimeField && editStyles.timeChipTimeSelected, noSlot && editStyles.timeChipDisabledText]}>+ 추가</Text>
-                          </TouchableOpacity>
-                        );
-                      })()}
-                    </ScrollView>
-                    {showAddCustomTimeField && (
-                      <View style={editStyles.customTimeRow}>
-                        <TextInput
-                          style={editStyles.customTimeInput}
-                          placeholder="HH:MM"
-                          placeholderTextColor="#9CA3AF"
-                          value={addCustomTimeInput}
-                          onChangeText={setAddCustomTimeInput}
-                          keyboardType="numbers-and-punctuation"
-                          maxLength={5}
-                          returnKeyType="done"
-                          onSubmitEditing={addCustomTimeForAdd}
-                          autoFocus
-                        />
-                        <TouchableOpacity style={editStyles.customTimeAddBtn} onPress={addCustomTimeForAdd} activeOpacity={0.8}>
-                          <Text style={editStyles.customTimeAddBtnText}>추가</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[editStyles.saveBtn, !isAddValid && editStyles.saveBtnDisabled]}
-                      onPress={handleAddSave}
-                      disabled={!isAddValid || addSaving}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={editStyles.saveBtnText}>{addSaving ? '저장 중...' : '저장'}</Text>
-                    </TouchableOpacity>
-                    <View style={{ height: 8 }} />
-                  </ScrollView>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* 수정 바텀 시트 */}
-      <Modal visible={!!editingPill} transparent animationType="slide" onRequestClose={closeEdit}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <TouchableWithoutFeedback onPress={closeEdit}>
-            <View style={editStyles.overlay}>
-              <TouchableWithoutFeedback onPress={() => {}}>
-                <View style={editStyles.card}>
-                  <View style={editStyles.handle} />
-                  <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                    <Text style={editStyles.title}>영양제 수정</Text>
-
-                    {/* 이름 */}
-                    <Text style={editStyles.label}>이름</Text>
-                    <View style={editStyles.chipWrap}>
-                      {NAME_PRESETS.map((n) => (
-                        <TouchableOpacity
-                          key={n}
-                          style={[editStyles.chip, !editIsCustomName && editName === n && editStyles.chipSelected]}
-                          onPress={() => { setEditName(n); setEditIsCustomName(false); Keyboard.dismiss(); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[editStyles.chipText, !editIsCustomName && editName === n && editStyles.chipTextSelected]}>{n}</Text>
-                        </TouchableOpacity>
-                      ))}
-                      <TouchableOpacity
-                        style={[editStyles.chip, editIsCustomName && editStyles.chipSelected]}
-                        onPress={() => { setEditIsCustomName(true); setEditName(''); }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[editStyles.chipText, editIsCustomName && editStyles.chipTextSelected]}>직접입력</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {editIsCustomName && (
-                      <TextInput
-                        style={editStyles.nameInput}
-                        placeholder="영양제 이름 입력"
-                        placeholderTextColor="#9CA3AF"
-                        value={editCustomName}
-                        onChangeText={setEditCustomName}
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                        autoFocus
-                      />
-                    )}
-
-                    {/* 아이콘 */}
-                    <Text style={editStyles.label}>아이콘</Text>
-                    <View style={editStyles.iconRow}>
-                      {ICONS.map((icon) => (
-                        <TouchableOpacity
-                          key={icon.emoji}
-                          style={[editStyles.iconChip, editIcon.emoji === icon.emoji && { borderColor: icon.color, backgroundColor: icon.color + '18' }]}
-                          onPress={() => setEditIcon(icon)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={editStyles.iconEmoji}>{icon.emoji}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* 개수/단위 */}
-                    <Text style={editStyles.label}>단위<Text style={editStyles.optional}>(선택)</Text></Text>
-                    <View style={editStyles.dosageRow}>
-                      <TextInput
-                        style={editStyles.dosageInput}
-                        placeholder="수량"
-                        placeholderTextColor="#9CA3AF"
-                        value={editDosageAmount}
-                        onChangeText={setEditDosageAmount}
-                        keyboardType="numeric"
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                      />
-                      {UNITS.map((unit) => (
-                        <TouchableOpacity
-                          key={unit}
-                          style={[editStyles.unitChip, editUnit === unit && editStyles.unitChipSelected]}
-                          onPress={() => { setEditUnit(editUnit === unit ? '' : unit); Keyboard.dismiss(); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[editStyles.unitChipText, editUnit === unit && editStyles.unitChipTextSelected]}>{unit}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* 복용 시간 */}
-                    <Text style={editStyles.label}>
-                      복용 시간{'  '}
-                      <Text style={[editStyles.optional, editAvailableSlots - editTimes.length < 0 && { color: '#EF4444' }]}>
-                        (잔여 슬롯 {Math.max(0, editAvailableSlots - editTimes.length)}개)
-                      </Text>
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={editStyles.timeChipWrap}>
-                      {PRESET_TIMES.map(({ label, time }) => {
-                        const sel = editTimes.includes(time);
-                        const noSlot = !sel && editAvailableSlots - editTimes.length <= 0;
-                        return (
-                          <TouchableOpacity
-                            key={time}
-                            style={[editStyles.timeChip, sel && editStyles.timeChipSelected, noSlot && editStyles.timeChipDisabled]}
-                            onPress={() => { if (!noSlot) { toggleEditTime(time); Keyboard.dismiss(); } }}
-                            activeOpacity={noSlot ? 1 : 0.7}
-                          >
-                            <Text style={[editStyles.timeChipLabel, sel && editStyles.timeChipLabelSelected, noSlot && editStyles.timeChipDisabledText]}>{label}</Text>
-                            <Text style={[editStyles.timeChipTime, sel && editStyles.timeChipTimeSelected, noSlot && editStyles.timeChipDisabledText]}>{time}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      {editTimes.filter((t) => !PRESET_TIMES.some((p) => p.time === t)).map((t) => (
-                        <TouchableOpacity
-                          key={t}
-                          style={[editStyles.timeChip, editStyles.timeChipSelected]}
-                          onPress={() => toggleEditTime(t)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[editStyles.timeChipLabel, editStyles.timeChipLabelSelected]}>직접 입력</Text>
-                          <Text style={[editStyles.timeChipTime, editStyles.timeChipTimeSelected]}>{t}</Text>
-                        </TouchableOpacity>
-                      ))}
-                      {(() => {
-                        const noSlot = editAvailableSlots - editTimes.length <= 0;
-                        return (
-                          <TouchableOpacity
-                            style={[editStyles.timeChip, showCustomTimeField && editStyles.timeChipSelected, noSlot && editStyles.timeChipDisabled]}
-                            onPress={() => { if (!noSlot) setShowCustomTimeField(true); }}
-                            activeOpacity={noSlot ? 1 : 0.7}
-                          >
-                            <Text style={[editStyles.timeChipLabel, showCustomTimeField && editStyles.timeChipLabelSelected, noSlot && editStyles.timeChipDisabledText]}>직접 입력</Text>
-                            <Text style={[editStyles.timeChipTime, showCustomTimeField && editStyles.timeChipTimeSelected, noSlot && editStyles.timeChipDisabledText]}>+ 추가</Text>
-                          </TouchableOpacity>
-                        );
-                      })()}
-                    </ScrollView>
-                    {showCustomTimeField && (
-                      <View style={editStyles.customTimeRow}>
-                        <TextInput
-                          style={editStyles.customTimeInput}
-                          placeholder="HH:MM"
-                          placeholderTextColor="#9CA3AF"
-                          value={customTimeInput}
-                          onChangeText={setCustomTimeInput}
-                          keyboardType="numbers-and-punctuation"
-                          maxLength={5}
-                          returnKeyType="done"
-                          onSubmitEditing={addCustomTime}
-                          autoFocus
-                        />
-                        <TouchableOpacity style={editStyles.customTimeAddBtn} onPress={addCustomTime} activeOpacity={0.8}>
-                          <Text style={editStyles.customTimeAddBtnText}>추가</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[editStyles.saveBtn, !editIsValid && editStyles.saveBtnDisabled]}
-                      onPress={handleEditSave}
-                      disabled={!editIsValid || saving}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={editStyles.saveBtnText}>{saving ? '저장 중...' : '저장'}</Text>
-                    </TouchableOpacity>
-                    <View style={{ height: 8 }} />
-                  </ScrollView>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
+        <View style={styles.ad}>
+          <InlineAd adGroupId={AD_IDS.manageBanner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function TimeSlotCard({ pill, time, onEdit, onDelete }: {
-  pill: Pill;
-  time: string;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.card}>
-      <TouchableOpacity style={styles.cardMain} onPress={onEdit} activeOpacity={0.7}>
-        <View style={[styles.pillIcon, { backgroundColor: pill.color + '22' }]}>
-          <Text style={styles.pillEmoji}>{pill.emoji}</Text>
-        </View>
-        <View style={styles.pillInfo}>
-          <Text style={styles.pillName}>{pill.name}</Text>
-          <Text style={styles.pillTime}>{formatTime(time)}</Text>
-          {pill.dosageAmount && pill.dosageUnit
-            ? <Text style={styles.pillNote}>{pill.dosageAmount}{pill.dosageUnit}</Text>
-            : pill.note
-              ? <Text style={styles.pillNote}>{pill.note}</Text>
-              : null}
-        </View>
-        <View style={[styles.colorDot, { backgroundColor: pill.color }]} />
-      </TouchableOpacity>
-      <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.editBtn} onPress={onEdit} activeOpacity={0.7}>
-          <Text style={styles.editBtnText}>수정</Text>
-        </TouchableOpacity>
-        <View style={styles.divider} />
-        <TouchableOpacity style={styles.deleteBtn} onPress={onDelete} activeOpacity={0.7}>
-          <Text style={styles.deleteBtnText}>삭제</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-function SimpleHeader({ title, onBack, rightLabel, onRight }: {
-  title: string;
-  onBack?: () => void;
-  rightLabel?: string;
-  onRight?: () => void;
-}) {
-  return (
-    <View style={headerStyles.container}>
-      <View style={headerStyles.side} />
-      <Text style={headerStyles.title}>{title}</Text>
-      <TouchableOpacity onPress={onRight} style={headerStyles.side} activeOpacity={0.7}>
-        <Text style={headerStyles.right}>{rightLabel ?? ''}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const headerStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    paddingHorizontal: 4,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  side: { width: 64, alignItems: 'center', justifyContent: 'center' },
-  back: { fontSize: 32, color: '#111827', lineHeight: 40 },
-  title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#111827' },
-  right: { fontSize: 14, fontWeight: '600', color: '#22C55E' },
-});
-
-function EmptyState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <View style={styles.emptyState}>
-      <Text style={styles.emptyEmoji}>📋</Text>
-      <Text style={styles.emptyTitle}>등록된 영양제가 없어요</Text>
-      <Text style={styles.emptyDesc}>복용 중인 약이나 영양제를{'\n'}추가해보세요</Text>
-      <TouchableOpacity style={styles.emptyButton} onPress={onAdd} activeOpacity={0.85}>
-        <Text style={styles.emptyButtonText}>+ 영양제 추가하기</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20 },
-  sectionHint: { fontSize: 13, color: '#6B7280', marginBottom: 12, fontWeight: '500' },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+  container: { flex: 1, backgroundColor: BG },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: CARD,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
   },
-  cardMain: { flexDirection: 'row', alignItems: 'center', padding: 16 },
-  pillIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  pillEmoji: { fontSize: 24 },
-  pillInfo: { flex: 1 },
-  pillName: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 3 },
-  pillTime: { fontSize: 13, color: PRIMARY_DARK, fontWeight: '600' },
-  pillNote: { fontSize: 12, color: '#9CA3AF', marginTop: 3 },
-  colorDot: { width: 10, height: 10, borderRadius: 5 },
-  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  editBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  editBtnText: { fontSize: 14, fontWeight: '600', color: PRIMARY_DARK },
-  divider: { width: 1, backgroundColor: '#F3F4F6' },
-  deleteBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  deleteBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
-  banner: { width: '100%', height: 96, overflow: 'hidden' },
-  footer: { paddingHorizontal: 20, paddingBottom: 28, paddingTop: 12 },
-  addButton: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  addButtonText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  emptyState: { alignItems: 'center', paddingTop: 80 },
-  emptyEmoji: { fontSize: 52, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 8 },
-  emptyDesc: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  emptyButton: { backgroundColor: PRIMARY, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
-  emptyButtonText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-});
+  back: { fontSize: 16, color: PRIMARY_DARK, fontWeight: '600', width: 60 },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: TEXT },
+  scroll: { padding: 16, paddingBottom: 40 },
+  count: { fontSize: 14, color: TEXT_SUB, marginBottom: 12, fontWeight: '600' },
 
-const slotStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
-  card: { width: '85%', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, alignItems: 'center' },
-  emoji: { fontSize: 48, marginBottom: 12 },
-  title: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  desc: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  watchBtn: { width: '100%', backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 10 },
-  watchBtnDisabled: { backgroundColor: '#D1D5DB' },
-  watchBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-  cancelBtn: { width: '100%', paddingVertical: 12, alignItems: 'center' },
-  cancelBtnText: { fontSize: 14, color: '#9CA3AF', fontWeight: '500' },
-});
-
-const editStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    paddingTop: 12,
-    maxHeight: '90%',
+    backgroundColor: CARD, borderRadius: 16, borderWidth: 1, borderColor: BORDER,
+    marginBottom: 10, overflow: 'hidden',
   },
-  handle: { width: 40, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 20 },
-  label: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8, marginTop: 4 },
-  optional: { fontWeight: '400', color: '#9CA3AF' },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent' },
-  chipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  chipText: { fontSize: 13, fontWeight: '600', color: '#4B5563' },
-  chipTextSelected: { color: PRIMARY_DARK },
-  nameInput: { backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827', marginBottom: 4 },
-  iconRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  iconChip: { flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
-  iconEmoji: { fontSize: 24 },
-  dosageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  dosageInput: { width: 72, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#111827', textAlign: 'center' },
-  unitChip: { flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center' },
-  unitChipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  unitChipText: { fontSize: 13, fontWeight: '600', color: '#4B5563' },
-  unitChipTextSelected: { color: PRIMARY_DARK },
-  timeChipWrap: { flexDirection: 'row', gap: 8, paddingBottom: 20, paddingRight: 4 },
-  timeChip: { width: 76, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center' },
-  timeChipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  timeChipLabel: { fontSize: 12, fontWeight: '600', color: '#4B5563' },
-  timeChipLabelSelected: { color: PRIMARY_DARK },
-  timeChipTime: { fontSize: 11, color: '#9CA3AF' },
-  timeChipTimeSelected: { color: PRIMARY },
-  timeChipDisabled: { opacity: 0.4 },
-  timeChipDisabledText: { color: '#9CA3AF' },
-  customTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  customTimeInput: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827' },
-  customTimeAddBtn: { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
-  customTimeAddBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  saveBtn: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
-  saveBtnDisabled: { backgroundColor: '#D1D5DB' },
-  saveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  cardReview: { borderColor: '#BFDBFE', borderWidth: 1.5 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  pillEmoji: { fontSize: 26 },
+  pillName: { fontSize: 16, fontWeight: '800', color: TEXT },
+  pillSub: { fontSize: 13, color: TEXT_MUTED, marginTop: 3 },
+  chevron: { fontSize: 12, color: TEXT_MUTED },
+
+  reviewBox: { backgroundColor: '#EFF6FF', padding: 14, gap: 10 },
+  reviewText: { fontSize: 13, color: '#1E3A8A', lineHeight: 20 },
+  reviewBtn: { backgroundColor: '#FFFFFF', borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
+  reviewBtnText: { fontSize: 14, fontWeight: '700', color: '#1D4ED8' },
+
+  editBox: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: BORDER, paddingTop: 14 },
+  editLabel: { fontSize: 13, fontWeight: '700', color: TEXT, marginBottom: 8, marginTop: 12 },
+  ingWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  ingChip: { backgroundColor: '#F3F4F6', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  ingText: { fontSize: 12.5, color: '#4B5563', fontWeight: '500' },
+  noIng: { fontSize: 13, color: TEXT_MUTED },
+
+  slotRow: { flexDirection: 'row', gap: 7 },
+  slotChip: {
+    flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 11,
+    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent',
+  },
+  slotChipOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
+  slotEmoji: { fontSize: 16, marginBottom: 2 },
+  slotLabel: { fontSize: 12, fontWeight: '600', color: '#4B5563' },
+  slotLabelOn: { color: PRIMARY_DARK, fontWeight: '800' },
+
+  countRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  countInput: {
+    width: 90, backgroundColor: '#F3F4F6', borderRadius: 11, paddingHorizontal: 12, paddingVertical: 11,
+    fontSize: 16, fontWeight: '700', color: TEXT, textAlign: 'center',
+  },
+  countUnit: { fontSize: 15, color: TEXT_SUB, fontWeight: '600' },
+
+  deleteBtn: { marginTop: 18, paddingVertical: 12, alignItems: 'center' },
+  deleteBtnText: { fontSize: 14, color: '#DC2626', fontWeight: '700' },
+
+  empty: { alignItems: 'center', paddingVertical: 40 },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: TEXT_MUTED },
+
+  addBtn: { backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  addBtnText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  slotAddBtn: {
+    backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center', marginTop: 10,
+  },
+  slotAddBtnOff: { opacity: 0.5 },
+  slotAddText: { fontSize: 14, fontWeight: '700', color: TEXT_SUB },
+
+  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginTop: 20 },
 });
