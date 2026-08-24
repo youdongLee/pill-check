@@ -1,4 +1,5 @@
 import { createRoute } from '@granite-js/react-native';
+import { InlineAd } from '@apps-in-toss/framework';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,6 +13,7 @@ import {
 import { usePills } from '../stores/PillContext';
 import { DailyRecord } from '../data/types';
 import { formatKoreanDate, getDatesBack, todayStr } from '../data/utils';
+import { AD_IDS } from '../src/ads';
 
 export const Route = createRoute('/history', { component: HistoryPage });
 
@@ -69,6 +71,9 @@ function HistoryPage() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.ad}>
+            <InlineAd adGroupId={AD_IDS.recordBanner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+          </View>
           <SummaryBar entries={entries} />
           {entries.map((entry) => (
             <DayCard
@@ -78,6 +83,9 @@ function HistoryPage() {
               onToggle={() => toggleExpand(entry.date)}
             />
           ))}
+          <View style={styles.ad}>
+            <InlineAd adGroupId={AD_IDS.recordFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+          </View>
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
@@ -243,6 +251,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ad: { width: '100%', minHeight: 96, overflow: 'hidden', marginBottom: 12 },
   scroll: {
     flex: 1,
   },

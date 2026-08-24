@@ -42,7 +42,7 @@ function ManagePage() {
   const { pills, maxSlots, increaseSlot, decreaseSlot, addPill, deletePill, updatePill } = usePills();
 
   // --- Reward ad (공용 훅: 로드 1개만 유지 + 순차 폴백) ---
-  const { adLoaded, playing, show } = useRewardAd(AD_IDS.rewardSlot);
+  const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
   const [showSlotModal, setShowSlotModal] = useState(false);
 
   const handleWatchAd = () => {
@@ -275,7 +275,7 @@ function ManagePage() {
       {/* 배너 광고 */}
       <View style={styles.banner}>
         <InlineAd
-          adGroupId={AD_IDS.manageFeed}
+          adGroupId={AD_IDS.manageBanner}
           theme="light"
           tone="grey"
           variant="expanded"

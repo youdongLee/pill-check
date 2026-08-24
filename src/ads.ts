@@ -1,32 +1,32 @@
-// 광고 / 프로모션 식별자 모음.
-// 지면은 앱마다 별도 발급한다. 아직 발급 전인 지면은 기존 운영 배너 ID로 폴백해 두었으니,
-// 콘솔에서 신규 지면을 발급하면 해당 항목만 교체하면 된다.
-const LIVE_BANNER = 'ait.v2.live.a0ee7a06ab474249'; // 기존 운영 배너(이미 발급됨)
-const LIVE_REWARD = 'ait.v2.live.7848babf27974479'; // 기존 운영 리워드(이미 발급됨)
-
+// 광고 / 프로모션 식별자 — 전부 콘솔 발급 완료된 운영 지면(2026-08-24 기준 ENABLED).
+//
+// 수익 구조 원칙:
+//  - 리워드(전면형)는 **기능 언락 전용**이다. 포인트 지급에 연결하지 않는다.
+//    복용 건수처럼 유저가 늘릴 수 있는 행동에 지급을 걸면 등록을 늘릴수록 지급이 커져 마진이 역주행한다.
+//  - 수익 본체는 배너/피드다. 지급이 0원이므로 노출을 늘린 만큼 그대로 마진이 된다.
 export const AD_IDS = {
-  /** 홈 상단 배너 */
-  homeBanner: LIVE_BANNER,
-  /** 홈 하단 피드(이미지형) — TODO: 신규 지면 발급 후 교체 */
-  homeFeed: LIVE_BANNER,
-  /** 기록 탭 피드 — TODO: 신규 지면 발급 후 교체 */
-  recordFeed: LIVE_BANNER,
-  /** 영양제 관리 탭 피드 */
-  manageFeed: LIVE_BANNER,
+  /** 홈 상단 배너 (문구 강조형) */
+  homeBanner: 'ait.v2.live.a0ee7a06ab474249',
+  /** 홈 중단 피드 (이미지 강조형) */
+  homeFeed: 'ait.v2.live.cdd859d125c446bc',
+  /** 기록 탭 상단 배너 */
+  recordBanner: 'ait.v2.live.517b705f3dab488c',
+  /** 기록 탭 하단 피드 */
+  recordFeed: 'ait.v2.live.e9cc2b606e7743f3',
+  /** 영양제 관리 탭 배너 */
+  manageBanner: 'ait.v2.live.2588455d864e4122',
   /** 내 플랜 탭 피드 */
-  presetFeed: LIVE_BANNER,
-  /** 스탬프 발급용 리워드 전면형 (지급 경로 아님 — 스탬프만 발급) */
-  reward: LIVE_REWARD,
-  /** 슬롯 추가용 리워드 전면형 — TODO: 신규 지면 발급 후 교체(현재는 reward와 공용) */
-  rewardSlot: LIVE_REWARD,
+  presetFeed: 'ait.v2.live.b6930667f8144517',
+  /**
+   * 리워드 전면형 — 순차 폴백 체인(useRewardAd가 실패 시에만 다음 그룹 시도).
+   * 쓰이는 곳: 영양제 슬롯 추가 · 플랜 슬롯 추가 · 주간 보너스 스탬프 발급.
+   */
+  reward: ['ait.v2.live.7848babf27974479', 'ait.v2.live.f8f99d3e8bd5467e'],
 };
 
-// 프로모션 코드 — 콘솔에서 발급한 운영 코드로 교체할 것(TEST_ 접두사가 남으면 집행액이 0으로 잡힌다).
+// 프로모션 코드 — 콘솔 발급 운영 코드로 교체할 것(TEST_ 접두사가 남으면 집행액이 0으로 잡힌다).
+// 지급 경로는 주간 보너스 하나뿐이다.
 export const PROMO = {
-  /** 복용 스탬프 1개 수령 */
-  intake: 'PILLCHECK_INTAKE',
-  /** 하루 전량 복용 완주 보너스 */
-  bonus: 'PILLCHECK_BONUS',
-  /** 7일 연속 완주 보너스 */
+  /** 7일 연속 완주 보너스 (유일한 현금 지급 경로) */
   streak: 'PILLCHECK_STREAK_7',
 };

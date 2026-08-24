@@ -21,20 +21,29 @@ import {
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
 import { useStamps } from '../stores/StampContext';
-import { Pill, Intake, normalizeRecord } from '../data/types';
+import { Pill, Intake } from '../data/types';
 import { PRESET_TIMES } from '../data/constants';
-import { formatKoreanDate, todayStr } from '../data/utils';
+import { formatKoreanDate, todayStr, getDatesBack } from '../data/utils';
 import { AD_IDS, PROMO } from '../src/ads';
 import { grantReward } from '../src/reward';
 import { useRewardAd } from '../src/useRewardAd';
-import {
-  COMPLETION_BONUS, INTAKE_REWARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, STREAK_BONUS, STREAK_DAYS,
-} from '../src/theme';
+import { LinkedAppPair } from '../src/LinkedAppPair';
+import { COMPLETE_PAIR, pairForDate } from '../src/linkedApps';
+import { PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, STREAK_BONUS, STREAK_DAYS } from '../src/theme';
 
 export const Route = createRoute('/', { component: HomePage });
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_CELL_WIDTH = Math.floor((SCREEN_WIDTH - 32) / 3); // 32 = paddingHorizontal 16*2
+
+const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** 복용 시간대 그룹 — 마지막 항목이 나머지를 모두 받는다 */
+const TIME_GROUPS = [
+  { key: 'morning', label: '아침', emoji: '🌅', match: (h: number) => h >= 4 && h < 11 },
+  { key: 'lunch', label: '점심', emoji: '☀️', match: (h: number) => h >= 11 && h < 17 },
+  { key: 'evening', label: '저녁', emoji: '🌙', match: (_h: number) => true },
+];
 
 const NAME_PRESETS = ['종합 비타민', '비타민 B', '비타민 C', '비타민 D', '오메가3', '마그네슘', '칼슘'];
 const ICONS = [
@@ -47,41 +56,32 @@ const UNITS = ['알', 'mg', 'ml'];
 function HomePage() {
   const navigation = Route.useNavigation();
   const {
-    pills, todayRecord, loading, toggleIntake, addPill, maxSlots, increaseSlot,
-    issueStamp, claimStamp, claimCompletionBonus,
+    pills, todayRecord, loading, toggleIntake, addPill, maxSlots, increaseSlot, getHistoryRecord,
   } = usePills();
-  const { currentStreak, canClaimStreakReward, markTodayComplete, claimStreakReward } = useStamps();
+  const {
+    stamps, todayCompleted, currentStreak, streakBonusAvailable, streakStampReady,
+    markTodayComplete, issueStreakStamp, claimStreakBonus,
+  } = useStamps();
 
   const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
 
-  const record = normalizeRecord(todayRecord);
-
   /**
-   * 목돈식 지급 분리:
-   *  - 광고는 스탬프 "발급"까지만 (여기서는 포인트를 주지 않는다)
-   *  - 포인트 "지급"은 유저가 스탬프를 직접 탭할 때
-   *  - 보너스 2종은 광고 없이 탭 지급 (광고=지급 직결 구조를 끊는다)
+   * 지급 설계 — 현금이 나가는 경로는 7일 연속 완주 하나뿐이다.
+   * 복용 건수당 지급을 두면 영양제를 많이 등록할수록 지급이 커져 마진이 역주행한다.
+   * 일일 완주는 도장·연속일수로만 보상하고, 리워드 광고는 기능 언락(슬롯 추가)에 쓴다.
+   *
+   * 보너스는 목돈식으로 발급과 지급을 분리한다: 광고 → 도장 발급 → 탭 → 지급.
    */
-  const onIssueStamp = () => {
+  const onIssueStreakStamp = () => {
     show(async () => {
-      await issueStamp();
+      await issueStreakStamp();
     });
   };
 
-  const onClaimStamp = async () => {
-    const ok = await claimStamp();
-    if (ok) await grantReward(PROMO.intake, INTAKE_REWARD);
-  };
-
-  const onClaimCompletion = async () => {
-    const ok = await claimCompletionBonus();
-    if (ok) await grantReward(PROMO.bonus, COMPLETION_BONUS);
-  };
-
   const onClaimStreak = async () => {
-    const ok = await claimStreakReward();
+    const ok = await claimStreakBonus();
     if (ok) await grantReward(PROMO.streak, STREAK_BONUS);
   };
 
@@ -186,10 +186,8 @@ function HomePage() {
   const progress = totalCount > 0 ? takenCount / totalCount : 0;
   const allDone = totalCount > 0 && takenCount === totalCount;
 
-  // 스탬프 3상태: 수령완료(✓) / 미수령(₩, 탭하면 지급) / 미발급(광고를 봐야 발급)
-  const stampSlots = Math.max(totalCount, record.stamped);
-  const earnableStamps = Math.max(0, takenCount - record.stamped);
-  const unclaimedStamps = Math.max(0, record.stamped - record.claimedStamps);
+  const last7Days = getDatesBack(7).reverse(); // 오래된 날 → 오늘 순
+  const daysToBonus = Math.max(0, STREAK_DAYS - currentStreak - (todayCompleted ? 0 : 1));
 
   // 전량 복용을 채우면 연속 기록용 완주일로 남긴다 (광고 없음)
   useEffect(() => {
@@ -198,10 +196,10 @@ function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allDone]);
 
-  // 미수령 스탬프 아래 👆 손가락 — 5060 타깃, 탭 대상을 직관적으로
+  // 발급된 보너스 도장 위 👆 손가락 — 5060 타깃, 탭 대상을 직관적으로
   const fingerBounce = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (unclaimedStamps === 0) return;
+    if (!streakStampReady) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(fingerBounce, { toValue: -4, duration: 380, useNativeDriver: true }),
@@ -210,12 +208,56 @@ function HomePage() {
     );
     loop.start();
     return () => loop.stop();
-  }, [unclaimedStamps, fingerBounce]);
+  }, [streakStampReady, fingerBounce]);
 
   const sortedIntakes = useMemo(
     () => [...activeIntakes].sort((a, b) => a.time.localeCompare(b.time)),
     [activeIntakes]
   );
+
+  // 복용 시간대별 그룹 — 평면 그리드보다 "지금 뭘 먹어야 하는지"가 바로 읽힌다
+  const timeGroups = useMemo(() => {
+    const groups = TIME_GROUPS.map((g) => ({ ...g, intakes: [] as Intake[] }));
+    for (const intake of sortedIntakes) {
+      const hour = Number(intake.time.slice(0, 2));
+      const idx = groups.findIndex((g) => g.match(hour));
+      groups[idx >= 0 ? idx : groups.length - 1].intakes.push(intake);
+    }
+    return groups.filter((g) => g.intakes.length > 0);
+  }, [sortedIntakes]);
+
+  // 지금 먹어야 할 약 — 현재 시각을 지난 미복용 건 중 가장 늦은 것, 없으면 다음 예정 건
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const nextIntake = useMemo(() => {
+    const pending = sortedIntakes.filter((i) => !i.taken);
+    if (pending.length === 0) return null;
+    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const overdue = pending.filter((i) => toMin(i.time) <= nowMinutes);
+    return overdue.length > 0 ? overdue[overdue.length - 1] : pending[0];
+  }, [sortedIntakes, nowMinutes]);
+  const nowLabel = nextIntake
+    ? Number(nextIntake.time.slice(0, 2)) * 60 + Number(nextIntake.time.slice(3, 5)) <= nowMinutes
+      ? '지금 드실 차례예요'
+      : '다음 복용'
+    : '';
+
+  // 최근 7일 복용률 — 기록 탭으로 유도하는 미니 리포트
+  const [weeklyRate, setWeeklyRate] = useState<number | null>(null);
+  useEffect(() => {
+    (async () => {
+      const records = await Promise.all(last7Days.map((d) => getHistoryRecord(d)));
+      let taken = 0;
+      let total = 0;
+      records.forEach((r) => {
+        if (!r) return;
+        total += r.intakes.length;
+        taken += r.intakes.filter((i) => i.taken).length;
+      });
+      setWeeklyRate(total === 0 ? null : Math.round((taken / total) * 100));
+    })();
+    // 오늘 체크가 바뀌면 다시 계산한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takenCount, totalCount]);
 
   if (loading) {
     return (
@@ -229,138 +271,117 @@ function HomePage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 상단 배너 */}
+        <View style={styles.bannerTop}>
+          <InlineAd adGroupId={AD_IDS.homeBanner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+
+        {/* 헤더 */}
+        <View style={styles.header}>
           <Text style={styles.headerDate}>{formatKoreanDate(todayStr())}</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('/preset')} activeOpacity={0.7}>
+            <Text style={styles.historyLink}>내 플랜</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={() => navigation.navigate('/preset')} activeOpacity={0.7}>
-          <Text style={styles.historyLink}>내 플랜</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* 메인 점선 카드 */}
-      <View style={styles.mainCard}>
-        {/* 진행 상황 */}
-        <View style={styles.progressSlot}>
-          <View style={styles.progressLeft}>
-            <Text style={styles.progressCount}>
-              {takenCount} / {totalCount === 0 ? '0' : totalCount}
-            </Text>
-            <Text style={styles.progressLabel}>
-              {allDone && totalCount > 0 ? '🎉 모두 복용 완료!' : '복약 완료'}
-            </Text>
-          </View>
-          <View style={styles.progressBarWrap}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        {/* 오늘 카드: 진행도 + 주간 도장 + 보너스 */}
+        <View style={styles.mainCard}>
+          <View style={styles.progressSlot}>
+            <View style={styles.progressLeft}>
+              <Text style={styles.progressCount}>{takenCount} / {totalCount}</Text>
+              <Text style={styles.progressLabel}>
+                {allDone && totalCount > 0 ? '🎉 모두 복용 완료!' : '복약 완료'}
+              </Text>
+            </View>
+            <View style={styles.progressBarWrap}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* 복용 스탬프 (카드 내부) — 광고=발급, 탭=지급 */}
-        {stampSlots > 0 && (
-          <>
-            <View style={styles.cardDivider} />
-            <View style={styles.stampInCard}>
-              <View style={styles.stampHeader}>
-                <Text style={styles.stampTitle}>복용 스탬프</Text>
-                {currentStreak > 0 && (
-                  <Text style={styles.streakBadge}>🔥 {currentStreak}일 연속</Text>
-                )}
-              </View>
+          <View style={styles.cardDivider} />
 
-              {/* 스탬프 판: 수령완료(✓) / 미수령(₩, 탭 지급 — 아래 👆 표시) / 미발급(빈칸) */}
-              <View style={styles.stampGrid}>
-                {Array.from({ length: stampSlots }).map((_, i) => {
-                  const isClaimed = i < record.claimedStamps;
-                  const isReady = !isClaimed && i < record.stamped;
-                  return (
-                    <View key={i} style={styles.stampSlot}>
-                      <TouchableOpacity
-                        disabled={!isReady}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 8, bottom: 20, left: 4, right: 4 }}
-                        onPress={onClaimStamp}
-                        style={[styles.stampCircle, isClaimed && styles.stampCircleDone, isReady && styles.stampCircleReady]}
-                      >
-                        <Text style={[styles.stampCircleText, isReady && styles.stampCircleTextReady]}>
-                          {isClaimed ? '✓' : isReady ? '₩' : ''}
-                        </Text>
-                      </TouchableOpacity>
-                      {/* 손가락 자리는 항상 확보(줄 높이 고정), 미수령일 때만 보임 */}
-                      <Animated.Text
-                        style={[
-                          styles.stampFinger,
-                          { opacity: isReady ? 1 : 0, transform: [{ translateY: fingerBounce }] },
-                        ]}
-                      >
-                        👆
-                      </Animated.Text>
+          {/* 주간 도장: 완주한 날에 도장이 찍힌다 (현금 지급 없음) */}
+          <View style={styles.stampInCard}>
+            <View style={styles.stampHeader}>
+              <Text style={styles.stampTitle}>이번 주 복용 도장</Text>
+              {currentStreak > 0 && <Text style={styles.streakBadge}>🔥 {currentStreak}일 연속</Text>}
+            </View>
+            <View style={styles.stampGrid}>
+              {last7Days.map((date) => {
+                const done = stamps.includes(date);
+                const isToday = date === todayStr();
+                const d = new Date(date.replace(/-/g, '/'));
+                return (
+                  <View key={date} style={styles.stampDayCol}>
+                    <View style={[styles.stampCircle, done && styles.stampCircleDone, isToday && !done && styles.stampCircleToday]}>
+                      <Text style={styles.stampCircleText}>{done ? '💊' : ''}</Text>
                     </View>
-                  );
-                })}
-              </View>
-
-              {unclaimedStamps > 0 && (
-                <Text style={styles.stampHint}>
-                  👆 스탬프 {unclaimedStamps}개를 누르면 개당 {INTAKE_REWARD}원!
-                </Text>
-              )}
-
-              {/* 광고 = 스탬프 발급 (지급 아님) */}
-              {earnableStamps > 0 && (
-                <TouchableOpacity
-                  style={[styles.stampActionBtn, (playing || !adLoaded) && styles.stampActionBtnDisabled]}
-                  onPress={onIssueStamp}
-                  disabled={playing || !adLoaded}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.stampActionBtnText}>
-                    {playing ? '광고 재생 중...' : adLoaded ? `📺 광고 보고 스탬프 받기 (${earnableStamps}개 대기)` : '광고 준비 중...'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* 보너스 2종 = 광고 없이 탭 지급 */}
-              {allDone && !record.bonusClaimed && (
-                <TouchableOpacity style={styles.bonusBtn} onPress={onClaimCompletion} activeOpacity={0.85}>
-                  <Text style={styles.bonusBtnTitle}>🎁 오늘 전부 복용 완료!</Text>
-                  <Text style={styles.bonusBtnSub}>{`탭해서 ${COMPLETION_BONUS}원 받기`}</Text>
-                </TouchableOpacity>
-              )}
-              {canClaimStreakReward && (
-                <TouchableOpacity style={styles.streakActionBtn} onPress={onClaimStreak} activeOpacity={0.85}>
-                  <Text style={styles.bonusBtnTitle}>🏆 {STREAK_DAYS}일 연속 복용 달성!</Text>
-                  <Text style={styles.bonusBtnSub}>{`탭해서 ${STREAK_BONUS}원 받기`}</Text>
-                </TouchableOpacity>
-              )}
-              {allDone && record.bonusClaimed && !canClaimStreakReward && earnableStamps === 0 && unclaimedStamps === 0 && (
-                <View style={styles.stampDoneRow}>
-                  <Text style={styles.stampDoneText}>🎉 오늘 몫은 모두 받았어요</Text>
-                </View>
-              )}
+                    <Text style={[styles.stampDayLabel, isToday && styles.stampDayLabelToday]}>
+                      {isToday ? '오늘' : DAY_NAMES[d.getDay()]}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
-          </>
+
+            {/* 유일한 현금 지급 경로: 7일 연속 완주 */}
+            {streakBonusAvailable && !streakStampReady && (
+              <TouchableOpacity
+                style={[styles.bonusBtn, (playing || !adLoaded) && styles.bonusBtnDisabled]}
+                onPress={onIssueStreakStamp}
+                disabled={playing || !adLoaded}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.bonusBtnTitle}>🏆 {STREAK_DAYS}일 연속 복용 달성!</Text>
+                <Text style={styles.bonusBtnSub}>
+                  {playing ? '광고 재생 중...' : adLoaded ? '광고 보고 보너스 도장 받기' : '광고 준비 중...'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {streakStampReady && (
+              <TouchableOpacity style={styles.claimBtn} onPress={onClaimStreak} activeOpacity={0.85}>
+                <Animated.Text style={[styles.claimFinger, { transform: [{ translateY: fingerBounce }] }]}>👆</Animated.Text>
+                <Text style={styles.claimBtnTitle}>보너스 도장을 눌러주세요</Text>
+                <Text style={styles.claimBtnSub}>{`탭해서 ${STREAK_BONUS}원 받기`}</Text>
+              </TouchableOpacity>
+            )}
+            {!streakBonusAvailable && currentStreak > 0 && (
+              <Text style={styles.streakHint}>
+                {daysToBonus === 0
+                  ? `오늘 전부 복용하면 ${STREAK_DAYS}일 연속 달성!`
+                  : `${daysToBonus}일 더 채우면 ${STREAK_BONUS}원 보너스`}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* 지금 먹을 약 */}
+        {nextIntake && (
+          <View style={styles.nowCard}>
+            <View style={styles.nowLeft}>
+              <Text style={styles.nowLabel}>{nowLabel}</Text>
+              <Text style={styles.nowName} numberOfLines={1}>
+                {nextIntake.pillName} · {nextIntake.time}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.nowBtn}
+              onPress={() => toggleIntake(nextIntake.pillId, nextIntake.time)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.nowBtnText}>먹었어요</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
-      </View>
-
-      {/* 영양제 추가 버튼 */}
-      {!atSlotLimit ? (
-        <TouchableOpacity style={styles.addPillBtn} onPress={openQuickAdd} activeOpacity={0.85}>
-          <Text style={styles.addPillBtnPlus}>+</Text>
-          <Text style={styles.addPillBtnText}>영양제 추가하기</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity style={styles.addPillBtnLocked} onPress={() => setShowSlotModal(true)} activeOpacity={0.85}>
-          <Text style={styles.addPillBtnLockedIcon}>🔒</Text>
-          <Text style={styles.addPillBtnLockedText}>슬롯이 꽉 찼어요 · 광고 보고 추가하기</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* 복약 체크 리스트 */}
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* 시간대별 복약 체크 */}
         {sortedIntakes.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>💊</Text>
@@ -368,40 +389,84 @@ function HomePage() {
             <Text style={styles.emptyDesc}>아래 버튼으로{'\n'}영양제를 추가해보세요</Text>
           </View>
         ) : (
-          <View style={styles.pillGrid}>
-            {sortedIntakes.map((intake) => {
-              const pill = activePillMap.get(intake.pillId);
-              if (!pill) return null;
-              return (
-                <PillGridItem
-                  key={`${intake.pillId}-${intake.time}`}
-                  pill={pill}
-                  intake={intake}
-                  onToggle={toggleIntake}
-                />
-              );
-            })}
-          </View>
+          timeGroups.map((group) => (
+            <View key={group.key} style={styles.groupSection}>
+              <View style={styles.groupHeader}>
+                <Text style={styles.groupTitle}>{group.emoji} {group.label}</Text>
+                <Text style={styles.groupCount}>
+                  {group.intakes.filter((i) => i.taken).length}/{group.intakes.length}
+                </Text>
+              </View>
+              <View style={styles.pillGrid}>
+                {group.intakes.map((intake) => {
+                  const pill = activePillMap.get(intake.pillId);
+                  if (!pill) return null;
+                  return (
+                    <PillGridItem
+                      key={`${intake.pillId}-${intake.time}`}
+                      pill={pill}
+                      intake={intake}
+                      onToggle={toggleIntake}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          ))
         )}
-        <View style={{ height: 16 }} />
+
+        {/* 영양제 추가 */}
+        {!atSlotLimit ? (
+          <TouchableOpacity style={styles.addPillBtn} onPress={openQuickAdd} activeOpacity={0.85}>
+            <Text style={styles.addPillBtnPlus}>+</Text>
+            <Text style={styles.addPillBtnText}>영양제 추가하기</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.addPillBtnLocked} onPress={() => setShowSlotModal(true)} activeOpacity={0.85}>
+            <Text style={styles.addPillBtnLockedIcon}>🔒</Text>
+            <Text style={styles.addPillBtnLockedText}>슬롯이 꽉 찼어요 · 광고 보고 추가하기</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* 피드 광고 */}
+        <View style={styles.bannerFeed}>
+          <InlineAd adGroupId={AD_IDS.homeFeed} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+        </View>
+
+        {/* 이번 주 복용률 — 기록 탭 유도 */}
+        <TouchableOpacity style={styles.reportCard} onPress={() => navigation.navigate('/history')} activeOpacity={0.85}>
+          <View style={styles.reportHead}>
+            <Text style={styles.reportTitle}>이번 주 복용률</Text>
+            <Text style={styles.reportMore}>기록 보기 ›</Text>
+          </View>
+          <Text style={styles.reportRate}>{weeklyRate === null ? '—' : `${weeklyRate}%`}</Text>
+          <View style={styles.reportBarTrack}>
+            <View style={[styles.reportBarFill, { width: `${weeklyRate ?? 0}%` }]} />
+          </View>
+          <Text style={styles.reportDesc}>
+            {weeklyRate === null
+              ? '기록이 쌓이면 복용률을 보여드려요'
+              : weeklyRate >= 80
+                ? '아주 잘 챙기고 계세요'
+                : weeklyRate >= 50
+                  ? '조금만 더 신경 써볼까요'
+                  : '오늘부터 다시 챙겨봐요'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* 크로스 프로모션 */}
+        <View style={styles.crossPromo}>
+          <LinkedAppPair
+            title={allDone ? '🎉 오늘 완주 기념! 이런 앱도 있어요' : '이런 앱도 함께 써보세요'}
+            apps={allDone ? COMPLETE_PAIR : pairForDate(todayStr())}
+          />
+        </View>
+
+        {/* 영양제 관리 */}
+        <TouchableOpacity style={styles.manageButton} onPress={() => navigation.navigate('/manage')} activeOpacity={0.85}>
+          <Text style={styles.manageButtonText}>영양제 관리 (수정/삭제)</Text>
+        </TouchableOpacity>
       </ScrollView>
-
-      {/* 배너 광고 */}
-      <View style={styles.banner}>
-        <InlineAd
-          adGroupId={AD_IDS.homeBanner}
-          theme="light"
-          tone="grey"
-          variant="expanded"
-          impressFallbackOnMount={true}
-        />
-      </View>
-
-      {/* 영양제 관리 */}
-      <TouchableOpacity style={styles.manageButton} onPress={() => navigation.navigate('/manage')} activeOpacity={0.85}>
-        <Text style={styles.manageButtonText}>영양제 관리 (수정/삭제)</Text>
-      </TouchableOpacity>
-
 {/* 슬롯 부족 모달 */}
       <Modal visible={showSlotModal} transparent animationType="fade" onRequestClose={() => setShowSlotModal(false)}>
         <TouchableOpacity style={slotModalStyles.overlay} activeOpacity={1} onPress={() => setShowSlotModal(false)}>
@@ -646,12 +711,66 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center' },
   container: { flex: 1, backgroundColor: '#F0FDF4' },
 
+  // 광고 지면
+  bannerTop: { width: '100%', height: 96, overflow: 'hidden' },
+  bannerFeed: { width: '100%', minHeight: 96, overflow: 'hidden', marginBottom: 16 },
+
+  // 지금 먹을 약
+  nowCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: PRIMARY_DARK,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  nowLeft: { flex: 1 },
+  nowLabel: { fontSize: 12, fontWeight: '600', color: '#FFFFFF', opacity: 0.85, marginBottom: 2 },
+  nowName: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+  nowBtn: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  nowBtnText: { fontSize: 14, fontWeight: '800', color: PRIMARY_DARK },
+
+  // 시간대 섹션
+  groupSection: { marginHorizontal: 16, marginBottom: 14 },
+  groupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  groupTitle: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  groupCount: { fontSize: 13, fontWeight: '700', color: '#9CA3AF' },
+
+  // 주간 복용률 리포트
+  reportCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  reportHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  reportTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  reportMore: { fontSize: 13, fontWeight: '600', color: PRIMARY_DARK },
+  reportRate: { fontSize: 30, fontWeight: '800', color: PRIMARY_DARK, marginTop: 8, marginBottom: 8 },
+  reportBarTrack: { height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden' },
+  reportBarFill: { height: 8, backgroundColor: PRIMARY, borderRadius: 4 },
+  reportDesc: { fontSize: 13, color: '#6B7280', marginTop: 10 },
+
+  crossPromo: { marginHorizontal: 16, marginBottom: 20 },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 16,
     paddingBottom: 12,
   },
   headerDate: { fontSize: 13, color: '#6B7280', fontWeight: '500', marginBottom: 2 },
@@ -807,8 +926,8 @@ const styles = StyleSheet.create({
   stampHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   stampTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
   streakBadge: { fontSize: 13, fontWeight: '700', color: '#F59E0B' },
-  stampGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 4 },
-  stampSlot: { alignItems: 'center', width: 46 },
+  stampGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  stampDayCol: { alignItems: 'center', flex: 1 },
   stampCircle: {
     width: 36,
     height: 36,
@@ -818,23 +937,32 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 4,
   },
   stampCircleDone: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  // 미수령 = 눈에 띄게(금색), 탭 유도
-  stampCircleReady: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 2 },
-  stampCircleText: { fontSize: 16, fontWeight: '800', color: PRIMARY_DARK },
-  stampCircleTextReady: { color: '#B45309' },
-  stampFinger: { fontSize: 14, height: 20, lineHeight: 20 },
-  stampHint: { fontSize: 13, fontWeight: '700', color: '#B45309', textAlign: 'center', marginBottom: 10 },
-  stampActionBtn: { backgroundColor: PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  stampActionBtnDisabled: { backgroundColor: '#D1D5DB' },
-  stampActionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  stampDoneRow: { alignItems: 'center', paddingVertical: 6 },
-  stampDoneText: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
-  bonusBtn: { backgroundColor: PRIMARY_DARK, borderRadius: 12, paddingVertical: 11, alignItems: 'center', marginTop: 8 },
+  stampCircleToday: { borderColor: PRIMARY, borderWidth: 2 },
+  stampCircleText: { fontSize: 17 },
+  stampDayLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
+  stampDayLabelToday: { color: PRIMARY_DARK, fontWeight: '700' },
+  streakHint: { fontSize: 13, color: '#6B7280', textAlign: 'center', paddingVertical: 4 },
+
+  // 주간 보너스 — 광고로 도장 발급 → 탭 지급
+  bonusBtn: { backgroundColor: PRIMARY_DARK, borderRadius: 12, paddingVertical: 11, alignItems: 'center', marginTop: 4 },
+  bonusBtnDisabled: { backgroundColor: '#D1D5DB' },
   bonusBtnTitle: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
   bonusBtnSub: { fontSize: 12, fontWeight: '600', color: '#FFFFFF', opacity: 0.9, marginTop: 2 },
-  streakActionBtn: { backgroundColor: '#F59E0B', borderRadius: 12, paddingVertical: 11, alignItems: 'center', marginTop: 8 },
+  claimBtn: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  claimFinger: { fontSize: 18, marginBottom: 2 },
+  claimBtnTitle: { fontSize: 14, fontWeight: '800', color: '#B45309' },
+  claimBtnSub: { fontSize: 13, fontWeight: '700', color: '#B45309', marginTop: 2 },
 
   banner: { width: '100%', height: 96, overflow: 'hidden' },
 

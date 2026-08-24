@@ -57,7 +57,7 @@ function PresetPage() {
   const { pills, replacePills } = usePills();
   const { presets, maxPresets, daySchedule, savePreset, updatePreset, deletePreset, assignDay, unassignDay, increasePresetSlot } = usePresets();
 
-  const { adLoaded, show } = useRewardAd(AD_IDS.rewardSlot);
+  const { adLoaded, show } = useRewardAd(AD_IDS.reward);
   const planNameInputRef = useRef<any>(null);
 
   // ── 이름 입력 모달 (현재 구성 저장용) ──
