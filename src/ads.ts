@@ -24,9 +24,11 @@ export const AD_IDS = {
   reward: ['ait.v2.live.7848babf27974479', 'ait.v2.live.f8f99d3e8bd5467e'],
 };
 
-// 프로모션 코드 — 콘솔 발급 운영 코드로 교체할 것(TEST_ 접두사가 남으면 집행액이 0으로 잡힌다).
-// 지급 경로는 주간 보너스 하나뿐이다.
+// 프로모션 코드 — 콘솔에 등록된 운영 코드(RUNNING·APPROVED). 지급액은 프로모션의 최대 지급액과 일치해야 한다.
+// 현행 배포본(20260423)과 동일한 지급 구조를 유지한다.
 export const PROMO = {
-  /** 7일 연속 완주 보너스 (유일한 현금 지급 경로) */
-  streak: 'PILLCHECK_STREAK_7',
+  /** "매일 복약 완료하면 3원 지급" — 하루 1회 */
+  daily: '01KNMBKGEZN9GCQB8VJYGXCE36',
+  /** "7일 연속 복약 완료하면 10원 지급" — 주 1회 */
+  streak: '01KNMBMT7JJR0HVRMS2Q44MW9V',
 };

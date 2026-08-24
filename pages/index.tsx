@@ -29,7 +29,7 @@ import { grantReward } from '../src/reward';
 import { useRewardAd } from '../src/useRewardAd';
 import { LinkedAppPair } from '../src/LinkedAppPair';
 import { COMPLETE_PAIR, pairForDate } from '../src/linkedApps';
-import { PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, STREAK_BONUS, STREAK_DAYS } from '../src/theme';
+import { DAILY_BONUS, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, STREAK_BONUS, STREAK_DAYS } from '../src/theme';
 
 export const Route = createRoute('/', { component: HomePage });
 
@@ -59,8 +59,9 @@ function HomePage() {
     pills, todayRecord, loading, toggleIntake, addPill, maxSlots, increaseSlot, getHistoryRecord,
   } = usePills();
   const {
-    stamps, todayCompleted, currentStreak, streakBonusAvailable, streakStampReady,
-    markTodayComplete, issueStreakStamp, claimStreakBonus,
+    stamps, todayCompleted, currentStreak,
+    dailyBonusUnclaimed, dailyStampReady, streakBonusAvailable, streakStampReady,
+    markTodayComplete, issueDailyStamp, claimDailyBonus, issueStreakStamp, claimStreakBonus,
   } = useStamps();
 
   const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
@@ -68,12 +69,22 @@ function HomePage() {
   const [showSlotModal, setShowSlotModal] = useState(false);
 
   /**
-   * 지급 설계 — 현금이 나가는 경로는 7일 연속 완주 하나뿐이다.
-   * 복용 건수당 지급을 두면 영양제를 많이 등록할수록 지급이 커져 마진이 역주행한다.
-   * 일일 완주는 도장·연속일수로만 보상하고, 리워드 광고는 기능 언락(슬롯 추가)에 쓴다.
+   * 지급 설계 — 현행 배포본과 동일하다: 완주 시 하루 1회 3원, 7일 연속 시 10원.
+   * 둘 다 빈도가 고정돼 유저가 늘릴 수 없다(복용 건수당 지급은 두지 않는다).
    *
-   * 보너스는 목돈식으로 발급과 지급을 분리한다: 광고 → 도장 발급 → 탭 → 지급.
+   * 목돈식으로 발급과 지급을 분리한다: 광고 → 도장 발급 → 탭 → 지급.
    */
+  const onIssueDailyStamp = () => {
+    show(async () => {
+      await issueDailyStamp();
+    });
+  };
+
+  const onClaimDaily = async () => {
+    const ok = await claimDailyBonus();
+    if (ok) await grantReward(PROMO.daily, DAILY_BONUS);
+  };
+
   const onIssueStreakStamp = () => {
     show(async () => {
       await issueStreakStamp();
@@ -199,7 +210,7 @@ function HomePage() {
   // 발급된 보너스 도장 위 👆 손가락 — 5060 타깃, 탭 대상을 직관적으로
   const fingerBounce = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!streakStampReady) return;
+    if (!dailyStampReady && !streakStampReady) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(fingerBounce, { toValue: -4, duration: 380, useNativeDriver: true }),
@@ -208,7 +219,7 @@ function HomePage() {
     );
     loop.start();
     return () => loop.stop();
-  }, [streakStampReady, fingerBounce]);
+  }, [dailyStampReady, streakStampReady, fingerBounce]);
 
   const sortedIntakes = useMemo(
     () => [...activeIntakes].sort((a, b) => a.time.localeCompare(b.time)),
@@ -331,7 +342,32 @@ function HomePage() {
               })}
             </View>
 
-            {/* 유일한 현금 지급 경로: 7일 연속 완주 */}
+            {/* 일일 보너스: 완주 → 광고로 도장 발급 → 탭 지급 (하루 1회) */}
+            {allDone && dailyBonusUnclaimed && !dailyStampReady && (
+              <TouchableOpacity
+                style={[styles.bonusBtn, (playing || !adLoaded) && styles.bonusBtnDisabled]}
+                onPress={onIssueDailyStamp}
+                disabled={playing || !adLoaded}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.bonusBtnTitle}>🎉 오늘 전부 복용 완료!</Text>
+                <Text style={styles.bonusBtnSub}>
+                  {playing ? '광고 재생 중...' : adLoaded ? '광고 보고 오늘의 도장 받기' : '광고 준비 중...'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {allDone && dailyStampReady && (
+              <TouchableOpacity style={styles.claimBtn} onPress={onClaimDaily} activeOpacity={0.85}>
+                <Animated.Text style={[styles.claimFinger, { transform: [{ translateY: fingerBounce }] }]}>👆</Animated.Text>
+                <Text style={styles.claimBtnTitle}>오늘의 도장을 눌러주세요</Text>
+                <Text style={styles.claimBtnSub}>{`탭해서 ${DAILY_BONUS}원 받기`}</Text>
+              </TouchableOpacity>
+            )}
+            {allDone && !dailyBonusUnclaimed && !streakBonusAvailable && (
+              <Text style={styles.streakHint}>🎉 오늘 몫은 모두 받았어요</Text>
+            )}
+
+            {/* 주간 보너스: 7일 연속 완주 */}
             {streakBonusAvailable && !streakStampReady && (
               <TouchableOpacity
                 style={[styles.bonusBtn, (playing || !adLoaded) && styles.bonusBtnDisabled]}

@@ -7,22 +7,33 @@ import { STREAK_DAYS } from '../src/theme';
 // stamps = "그날 등록분을 전부 복용한 날짜" 목록. 구버전의 '도장 받은 날'과 의미가 이어진다.
 const STAMPS_KEY = '@pillcheck/stamps';
 const STREAK_MILESTONE_KEY = '@pillcheck/streakMilestone';
-// 주간 보너스용 스탬프를 발급받은 날짜. 광고 시청 시점을 기록해 지급과 분리한다.
+// 일일 보너스를 지급받은 날짜 — 현행 배포본이 쓰던 키를 그대로 재사용한다(하루 1회 제한).
+const CLAIMED_DATE_KEY = '@pillcheck/claimedDate';
+// 광고를 봐서 도장이 발급된 날짜. 지급(위 키)과 분리해 기록한다.
+const DAILY_STAMP_KEY = '@pillcheck/dailyStamp';
 const STREAK_STAMP_KEY = '@pillcheck/streakStamp';
 
 interface StampContextType {
   stamps: string[];
   todayCompleted: boolean;
   currentStreak: number;
+  /** 오늘 일일 보너스를 아직 안 받은 상태 (완주 여부는 호출측에서 함께 판단) */
+  dailyBonusUnclaimed: boolean;
+  /** 광고를 봐서 오늘 도장이 발급된 상태 (탭하면 지급) */
+  dailyStampReady: boolean;
   /** 7일 배수를 새로 달성해 보너스를 받을 수 있는 상태 */
   streakBonusAvailable: boolean;
-  /** 광고를 봐서 보너스 스탬프가 발급된 상태 (탭하면 지급) */
+  /** 광고를 봐서 주간 보너스 도장이 발급된 상태 (탭하면 지급) */
   streakStampReady: boolean;
   /** 오늘 완주를 기록 (광고 없음) */
   markTodayComplete: () => Promise<void>;
-  /** 광고 시청 후 보너스 스탬프 발급 (지급 아님) */
+  /** 광고 시청 후 일일 도장 발급 (지급 아님) */
+  issueDailyStamp: () => Promise<void>;
+  /** 발급된 일일 도장을 수령 처리. 처음 수령이면 true */
+  claimDailyBonus: () => Promise<boolean>;
+  /** 광고 시청 후 주간 보너스 도장 발급 (지급 아님) */
   issueStreakStamp: () => Promise<void>;
-  /** 발급된 보너스 스탬프를 수령 처리. 처음 수령이면 true */
+  /** 발급된 주간 보너스 도장을 수령 처리. 처음 수령이면 true */
   claimStreakBonus: () => Promise<boolean>;
 }
 
@@ -50,24 +61,35 @@ function calcStreak(stamps: string[]): number {
 export function StampProvider({ children }: { children: ReactNode }) {
   const [stamps, setStamps] = useState<string[]>([]);
   const [streakMilestone, setStreakMilestone] = useState(0);
+  const [claimedDate, setClaimedDate] = useState<string | null>(null);
+  const [dailyStampDate, setDailyStampDate] = useState<string | null>(null);
   const [streakStampDate, setStreakStampDate] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [stampsRaw, milestoneRaw, stampDateRaw] = await Promise.all([
+      const [stampsRaw, milestoneRaw, claimedRaw, dailyRaw, streakRaw] = await Promise.all([
         Storage.getItem(STAMPS_KEY),
         Storage.getItem(STREAK_MILESTONE_KEY),
+        Storage.getItem(CLAIMED_DATE_KEY),
+        Storage.getItem(DAILY_STAMP_KEY),
         Storage.getItem(STREAK_STAMP_KEY),
       ]);
       if (stampsRaw) setStamps(JSON.parse(stampsRaw));
       if (milestoneRaw) setStreakMilestone(JSON.parse(milestoneRaw));
-      if (stampDateRaw) setStreakStampDate(stampDateRaw);
+      // claimedDate는 구버전이 따옴표 없이 저장했다 — 양쪽 형식을 모두 받아준다
+      if (claimedRaw) setClaimedDate(claimedRaw.replace(/^"|"$/g, ''));
+      if (dailyRaw) setDailyStampDate(dailyRaw);
+      if (streakRaw) setStreakStampDate(streakRaw);
     })();
   }, []);
 
   const today = todayStr();
   const todayCompleted = stamps.includes(today);
   const currentStreak = calcStreak(stamps);
+
+  const dailyBonusUnclaimed = claimedDate !== today;
+  const dailyStampReady = dailyBonusUnclaimed && dailyStampDate === today;
+
   // 새로운 7일 배수에 도달했고 오늘 완주한 경우에만 보너스 대상
   const streakBonusAvailable =
     todayCompleted && currentStreak >= STREAK_DAYS &&
@@ -79,6 +101,19 @@ export function StampProvider({ children }: { children: ReactNode }) {
     const next = [...stamps, today];
     await Storage.setItem(STAMPS_KEY, JSON.stringify(next));
     setStamps(next);
+  };
+
+  const issueDailyStamp = async () => {
+    if (!dailyBonusUnclaimed || dailyStampDate === today) return;
+    await Storage.setItem(DAILY_STAMP_KEY, today);
+    setDailyStampDate(today);
+  };
+
+  const claimDailyBonus = async (): Promise<boolean> => {
+    if (!dailyStampReady) return false;
+    await Storage.setItem(CLAIMED_DATE_KEY, today);
+    setClaimedDate(today);
+    return true;
   };
 
   const issueStreakStamp = async () => {
@@ -98,8 +133,9 @@ export function StampProvider({ children }: { children: ReactNode }) {
   return (
     <StampContext.Provider
       value={{
-        stamps, todayCompleted, currentStreak, streakBonusAvailable, streakStampReady,
-        markTodayComplete, issueStreakStamp, claimStreakBonus,
+        stamps, todayCompleted, currentStreak,
+        dailyBonusUnclaimed, dailyStampReady, streakBonusAvailable, streakStampReady,
+        markTodayComplete, issueDailyStamp, claimDailyBonus, issueStreakStamp, claimStreakBonus,
       }}
     >
       {children}
