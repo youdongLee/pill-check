@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import {
-  BG, LINE, PAD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, T_BODY, T_SMALL, T_SUB, T_TITLE,
+  BG, LIFT, LINE, PAD, PRIMARY, PRIMARY_SOFT, SURFACE, T_BODY, T_SMALL, T_SUB, T_TITLE,
   TEXT, TEXT_MUTED, TEXT_SUB,
 } from './theme';
 
@@ -123,30 +123,30 @@ export function Empty({
 
 const s = StyleSheet.create({
   titleWrap: { paddingHorizontal: PAD, paddingTop: 22, paddingBottom: 18 },
-  title: { fontSize: T_TITLE, fontWeight: '800', color: TEXT },
+  title: { fontSize: T_TITLE, fontWeight: '800', color: TEXT, letterSpacing: -0.3 },
   titleSub: { fontSize: T_SUB, color: TEXT_SUB, marginTop: 5 },
 
   section: { fontSize: T_BODY, fontWeight: '800', color: TEXT, paddingHorizontal: PAD, marginBottom: 12 },
 
   action: {
-    marginHorizontal: PAD, backgroundColor: PRIMARY_DARK, borderRadius: 999,
-    paddingVertical: 19, alignItems: 'center',
+    marginHorizontal: PAD, backgroundColor: PRIMARY, borderRadius: 18,
+    paddingVertical: 20, alignItems: 'center', ...LIFT,
   },
-  actionGold: { backgroundColor: '#FEF3C7' },
-  actionQuiet: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: LINE, paddingVertical: 15 },
-  actionOff: { backgroundColor: '#DCE3DE' },
+  actionGold: { backgroundColor: '#F7EEDA' },
+  actionQuiet: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: LINE, paddingVertical: 16, shadowOpacity: 0, elevation: 0 },
+  actionOff: { backgroundColor: '#DEDCD3', shadowOpacity: 0, elevation: 0 },
   actionText: { fontSize: 19, fontWeight: '800', color: '#FFFFFF' },
-  actionTextGold: { color: '#92610A' },
+  actionTextGold: { color: '#7A5A18' },
   actionTextQuiet: { color: TEXT_SUB, fontSize: T_SUB, fontWeight: '700' },
 
   pill: {
-    paddingHorizontal: 15, paddingVertical: 11, borderRadius: 999,
-    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: LINE,
+    paddingHorizontal: 15, paddingVertical: 12, borderRadius: 999,
+    backgroundColor: SURFACE, borderWidth: 1, borderColor: LINE,
   },
   pillWide: { flex: 1, alignItems: 'center' },
-  pillOn: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
+  pillOn: { backgroundColor: PRIMARY_SOFT, borderColor: PRIMARY },
   pillText: { fontSize: T_SUB, fontWeight: '700', color: TEXT_SUB },
-  pillTextOn: { color: PRIMARY_DARK, fontWeight: '800' },
+  pillTextOn: { color: PRIMARY, fontWeight: '800' },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

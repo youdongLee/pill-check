@@ -1,13 +1,13 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { LINE, PAD, T_SMALL, TEXT, TEXT_MUTED } from './theme';
+import { LINE, PAD, PRIMARY, SUNK, T_SMALL, TEXT, TEXT_MUTED } from './theme';
 
 /**
  * 한 페이지 안의 구역.
  *
- * 이 앱은 화면을 나누지 않는다 — 5060 유저는 문을 눌러 들어가지 않는다.
- * 대신 한 장을 위에서 아래로 훑으며 전부 볼 수 있게, 구역마다 큰 제목을 단다.
- * 제목만 읽어도 "여기서 뭘 할 수 있는지" 알아야 한다.
+ * 5060 유저는 문을 눌러 다른 화면으로 들어가지 않는다. 그래서 이 앱은 화면을 나누지 않고
+ * 한 장에 구역을 쌓는다. 다만 구역을 박스로 가두면 다시 조잡해지므로,
+ * 얇은 라벨 + 큰 제목 + 넉넉한 여백으로만 나눈다.
  */
 export function Block({
   no,
@@ -16,7 +16,6 @@ export function Block({
   children,
   first,
 }: {
-  /** 구역 번호 — 순서가 있다는 걸 알려주면 훑기가 쉬워진다 */
   no: number;
   title: string;
   desc?: string;
@@ -26,13 +25,12 @@ export function Block({
   return (
     <View style={[s.wrap, first && s.first]}>
       <View style={s.head}>
-        <View style={s.no}>
-          <Text style={s.noText}>{no}</Text>
+        <View style={s.label}>
+          <Text style={s.no}>{String(no).padStart(2, '0')}</Text>
+          <View style={s.rule} />
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={s.title}>{title}</Text>
-          {desc ? <Text style={s.desc}>{desc}</Text> : null}
-        </View>
+        <Text style={s.title}>{title}</Text>
+        {desc ? <Text style={s.desc}>{desc}</Text> : null}
       </View>
       {children}
     </View>
@@ -40,16 +38,14 @@ export function Block({
 }
 
 const s = StyleSheet.create({
-  wrap: { paddingTop: 30, borderTopWidth: 8, borderTopColor: '#EBF2ED', marginTop: 26 },
-  first: { borderTopWidth: 0, marginTop: 0, paddingTop: 20 },
-  head: { flexDirection: 'row', gap: 12, paddingHorizontal: PAD, marginBottom: 18 },
-  no: {
-    width: 26, height: 26, borderRadius: 13, backgroundColor: '#1F7A46',
-    alignItems: 'center', justifyContent: 'center', marginTop: 2,
-  },
-  noText: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
-  title: { fontSize: 21, fontWeight: '800', color: TEXT, lineHeight: 29 },
-  desc: { fontSize: T_SMALL, color: TEXT_MUTED, marginTop: 4, lineHeight: 19 },
-});
+  wrap: { paddingTop: 34, marginTop: 34, borderTopWidth: 9, borderTopColor: SUNK },
+  first: { borderTopWidth: 0, marginTop: 0, paddingTop: 24 },
 
-export { LINE, PAD };
+  head: { paddingHorizontal: PAD, marginBottom: 20 },
+  label: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 11 },
+  no: { fontSize: 11, fontWeight: '800', color: PRIMARY, letterSpacing: 1.4 },
+  rule: { flex: 1, height: 1, backgroundColor: LINE },
+
+  title: { fontSize: 23, fontWeight: '800', color: TEXT, lineHeight: 31, letterSpacing: -0.3 },
+  desc: { fontSize: T_SMALL, color: TEXT_MUTED, marginTop: 6, lineHeight: 19 },
+});

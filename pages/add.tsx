@@ -14,7 +14,7 @@ import { useRewardAd } from '../src/useRewardAd';
 import { IngredientPicker } from '../src/IngredientPicker';
 import { Action, Pill, Section, Title } from '../src/ui';
 import {
-  BG, LINE, PAD, PRIMARY, PRIMARY_DARK, T_SMALL, T_SUB, TEXT, TEXT_MUTED, TEXT_SUB,
+  BG, LINE, PAD, PRIMARY, SURFACE, T_SMALL, T_SUB, TEXT, TEXT_MUTED, TEXT_SUB,
 } from '../src/theme';
 
 export const Route = createRoute('/add', { component: AddPage });
@@ -198,19 +198,19 @@ const s = StyleSheet.create({
 
   field: { paddingHorizontal: PAD },
   input: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1.5, borderColor: LINE,
+    backgroundColor: SURFACE, borderRadius: 14, borderWidth: 1.5, borderColor: LINE,
     paddingHorizontal: 16, paddingVertical: 15, fontSize: 17, color: TEXT,
   },
   hint: { fontSize: T_SMALL, color: TEXT_MUTED, paddingHorizontal: PAD, marginTop: -4, marginBottom: 12, lineHeight: 19 },
 
   ing: { fontSize: T_SUB, color: TEXT_SUB, lineHeight: 26, paddingHorizontal: PAD },
-  advice: { fontSize: T_SUB, color: PRIMARY_DARK, lineHeight: 22, paddingHorizontal: PAD, marginTop: -4, marginBottom: 12, fontWeight: '600' },
+  advice: { fontSize: T_SUB, color: PRIMARY, lineHeight: 22, paddingHorizontal: PAD, marginTop: -4, marginBottom: 12, fontWeight: '600' },
 
   slotRow: { flexDirection: 'row', gap: 8, paddingHorizontal: PAD },
 
   countRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: PAD },
   countInput: {
-    width: 88, backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1.5, borderColor: LINE,
+    width: 88, backgroundColor: SURFACE, borderRadius: 14, borderWidth: 1.5, borderColor: LINE,
     paddingVertical: 14, fontSize: 18, fontWeight: '700', color: TEXT, textAlign: 'center',
   },
   countUnit: { fontSize: T_SUB, color: TEXT_SUB, fontWeight: '700' },

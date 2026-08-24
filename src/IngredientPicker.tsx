@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Keyboard, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { INGREDIENTS, findIngredient } from '../data/ingredients';
 import type { ProductIngredient } from '../data/products';
-import { LINE, PAD, T_SMALL, T_SUB, TEXT, TEXT_MUTED, TEXT_SUB } from './theme';
+import { LINE, PAD, SURFACE, T_SMALL, T_SUB, TEXT, TEXT_MUTED, TEXT_SUB } from './theme';
 import { Pill } from './ui';
 
 /** 처음에 보여줄 성분 수 — 45종을 한꺼번에 펼치면 고르기 어렵다 */
@@ -87,7 +87,7 @@ const s = StyleSheet.create({
   },
   amountName: { flex: 1, fontSize: T_SUB, color: TEXT_SUB, fontWeight: '600' },
   input: {
-    width: 86, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1.5, borderColor: LINE,
+    width: 86, backgroundColor: SURFACE, borderRadius: 12, borderWidth: 1.5, borderColor: LINE,
     paddingVertical: 11, fontSize: T_SUB, fontWeight: '700', color: TEXT, textAlign: 'center',
   },
   unit: { width: 32, fontSize: T_SMALL, color: TEXT_MUTED, fontWeight: '700' },

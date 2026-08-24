@@ -26,12 +26,12 @@ export interface Product {
   defaultCount: number;
 }
 
-const GREEN = '#22C55E';
-const BLUE = '#3B82F6';
-const ORANGE = '#F97316';
-const PURPLE = '#8B5CF6';
-const TEAL = '#14B8A6';
-const PINK = '#EC4899';
+const GREEN = '#12704A';
+const BLUE = '#2C5F8A';
+const ORANGE = '#B5722A';
+const PURPLE = '#6B5B95';
+const TEAL = '#2E7D74';
+const PINK = '#A85670';
 
 export const PRODUCTS: readonly Product[] = [
   {

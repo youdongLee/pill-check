@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useProfile } from '../stores/ProfileContext';
 import { AGE_BANDS, type Sex } from '../data/rda';
-import { BG, LINE, PAD, PRIMARY, PRIMARY_DARK, T_SMALL, T_SUB, TEXT, TEXT_MUTED } from '../src/theme';
+import { BG, LINE, PAD, PRIMARY, SURFACE, T_SMALL, T_SUB, TEXT, TEXT_MUTED } from '../src/theme';
 
 export const Route = createRoute('/setup', { component: SetupPage });
 
@@ -85,7 +85,7 @@ const s = StyleSheet.create({
   choices: { gap: 12 },
   choice: {
     borderWidth: 1.5, borderColor: LINE, borderRadius: 999,
-    paddingVertical: 22, alignItems: 'center', backgroundColor: '#FFFFFF',
+    paddingVertical: 22, alignItems: 'center', backgroundColor: SURFACE,
   },
   choiceText: { fontSize: 20, fontWeight: '700', color: TEXT },
 
