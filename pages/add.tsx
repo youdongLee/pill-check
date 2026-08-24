@@ -10,6 +10,7 @@ import { findIngredient } from '../data/ingredients';
 import { SLOTS, type SlotKey } from '../data/types';
 import { recommendTiming } from '../src/analyze';
 import { AD_IDS } from '../src/ads';
+import { useRewardAd } from '../src/useRewardAd';
 import { IngredientPicker } from '../src/IngredientPicker';
 import { Action, Pill, Section, Title } from '../src/ui';
 import {
@@ -23,7 +24,8 @@ const PREVIEW = 12;
 
 function AddPage() {
   const navigation = Route.useNavigation();
-  const { pills, maxPills, addPill } = usePills();
+  const { pills, maxPills, addPill, increaseSlot } = usePills();
+  const { show } = useRewardAd(AD_IDS.reward);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [isCustom, setIsCustom] = useState(false);
@@ -57,9 +59,10 @@ function AddPage() {
   const save = async () => {
     if (!valid || saving) return;
     if (pills.length >= maxPills) {
-      Alert.alert('자리가 꽉 찼어요', `지금은 ${maxPills}개까지 넣을 수 있어요.`, [
-        { text: '알겠어요', style: 'cancel' },
-        { text: '자리 늘리기', onPress: () => navigation.navigate('/manage') },
+      Alert.alert('자리가 꽉 찼어요', `지금은 ${maxPills}개까지 넣을 수 있어요.
+광고를 보시면 한 칸 늘려드려요.`, [
+        { text: '괜찮아요', style: 'cancel' },
+        { text: '광고 보고 늘리기', onPress: () => show(async () => { await increaseSlot(); Alert.alert('자리를 늘렸어요', '이제 넣으실 수 있어요.'); }) },
       ]);
       return;
     }
