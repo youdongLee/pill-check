@@ -129,7 +129,10 @@ console.log('\n[8] 구버전 이름 → 제품 추정');
     ['비타민 C', 'vitaminC'],
     ['칼슘', 'calcium'],
     ['오메가3', 'omega3'],
-    ['프로폴리스', undefined],
+    ['프로폴리스', 'propolis'],
+    ['쏘팔메토', 'sawPalmetto'],
+    ['달맞이꽃 종자유', 'eveningPrimrose'],
+    ['아스타잔틴', undefined],
   ];
   for (const [name, expected] of cases) {
     const got = guessProductByName(name)?.id;
@@ -137,7 +140,17 @@ console.log('\n[8] 구버전 이름 → 제품 추정');
   }
 }
 
-console.log('\n[9] 빈 입력 방어');
+console.log('\n[9] 프리셋 커버리지 — OCR 없이 이 목록이 성분 입력을 대신한다');
+{
+  check('제품 프리셋이 30종 이상', PRODUCTS.length >= 30, `${PRODUCTS.length}종`);
+  check('성분 사전이 40종 이상', INGREDIENTS.length >= 40, `${INGREDIENTS.length}종`);
+  const noMatch = PRODUCTS.filter((p) => !guessProductByName(p.name));
+  check('모든 프리셋 이름이 스스로 추정된다', noMatch.length === 0, noMatch.map((p) => p.name).join(', '));
+  const noIng = PRODUCTS.filter((p) => p.ingredients.length === 0);
+  check('성분이 빈 프리셋이 없다', noIng.length === 0, noIng.map((p) => p.id).join(', '));
+}
+
+console.log('\n[10] 빈 입력 방어');
 {
   const { findings, totals } = analyze([]);
   check('영양제가 없으면 결과가 비어 있다', findings.length === 0 && totals.length === 0);

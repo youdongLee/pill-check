@@ -19,11 +19,8 @@ export default defineConfig({
         // 콘솔 앱 정보(iconUri)와 반드시 동일해야 검수를 통과한다
         icon: 'https://static.toss.im/appsintoss/28423/b49aa26d-29f3-4000-8f82-0cd7fe43e0e5.png',
       },
-      // 성분표 촬영(OCR)에 카메라와 사진 읽기가 필요하다
-      permissions: [
-        { name: 'camera', access: 'access' },
-        { name: 'photos', access: 'read' },
-      ],
+      // 쓰지 않는 권한은 요구하지 않는다
+      permissions: [],
     }),
   ],
 });

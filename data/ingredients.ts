@@ -66,6 +66,19 @@ export const INGREDIENTS: readonly Ingredient[] = [
   { key: 'chondroitin', name: '콘드로이틴', unit: 'mg', upperLimit: null, timing: 'any' },
   { key: 'collagen', name: '콜라겐', unit: 'mg', upperLimit: null, timing: 'any' },
   { key: 'psyllium', name: '차전자피 식이섬유', unit: 'g', upperLimit: null, timing: 'any' },
+  { key: 'propolis', name: '프로폴리스', unit: 'mg', upperLimit: null, timing: 'any' },
+  { key: 'sawPalmetto', name: '쏘팔메토', unit: 'mg', upperLimit: null, timing: 'withMeal', timingReason: '기름에 녹는 성분이라 식후가 좋아요' },
+  { key: 'glucosamine', name: '글루코사민', unit: 'mg', upperLimit: null, timing: 'any' },
+  { key: 'gla', name: '감마리놀렌산', unit: 'mg', upperLimit: null, timing: 'withMeal', timingReason: '기름 성분이라 식후에 흡수가 잘 돼요' },
+  { key: 'krillOil', name: '크릴오일', unit: 'mg', upperLimit: null, timing: 'withMeal', timingReason: '기름 성분이라 식후에 흡수가 잘 돼요' },
+  { key: 'arginine', name: '아르기닌', unit: 'mg', upperLimit: null, timing: 'empty', timingReason: '공복에 먹어야 흡수가 잘 돼요' },
+  { key: 'spirulina', name: '스피루리나', unit: 'mg', upperLimit: null, timing: 'any' },
+  { key: 'bilberry', name: '빌베리 추출물', unit: 'mg', upperLimit: null, timing: 'withMeal', timingReason: '눈 영양 성분은 식후 흡수가 좋아요' },
+  { key: 'boswellia', name: '보스웰리아', unit: 'mg', upperLimit: null, timing: 'any' },
+  { key: 'hyaluronic', name: '히알루론산', unit: 'mg', upperLimit: null, timing: 'any' },
+  { key: 'greenMussel', name: '초록입홍합', unit: 'mg', upperLimit: null, timing: 'withMeal', timingReason: '기름 성분이라 식후가 좋아요' },
+  { key: 'garlic', name: '마늘 추출물', unit: 'mg', upperLimit: null, timing: 'withMeal', timingReason: '공복에 먹으면 속이 쓰릴 수 있어요' },
+  { key: 'noni', name: '노니', unit: 'mg', upperLimit: null, timing: 'any' },
 ];
 
 const BY_KEY = new Map(INGREDIENTS.map((i) => [i.key, i]));

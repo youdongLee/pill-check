@@ -11,6 +11,7 @@ import { findIngredient } from '../data/ingredients';
 import { SLOTS, type SlotKey } from '../data/types';
 import { recommendTiming, TIMING_LABEL } from '../src/analyze';
 import { AD_IDS } from '../src/ads';
+import { IngredientPicker } from '../src/IngredientPicker';
 import {
   BG, BORDER, CARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, TEXT, TEXT_MUTED, TEXT_SUB,
 } from '../src/theme';
@@ -34,6 +35,7 @@ function AddPage() {
   const [isCustom, setIsCustom] = useState(false);
   const [slots, setSlots] = useState<SlotKey[]>(['morning']);
   const [count, setCount] = useState('');
+  const [customIngredients, setCustomIngredients] = useState<{ key: string; amount: number }[]>([]);
   const [saving, setSaving] = useState(false);
 
   const atLimit = pills.length >= maxPills;
@@ -49,6 +51,7 @@ function AddPage() {
     setCustomName('');
     setSlots(defaultSlotsFor(p));
     setCount(String(p.defaultCount));
+    setCustomIngredients([]);
     Keyboard.dismiss();
   };
 
@@ -83,7 +86,7 @@ function AddPage() {
       emoji: product?.emoji ?? '💊',
       color: product?.color ?? PRIMARY,
       productId: product?.id,
-      ingredients: product?.ingredients ?? [],
+      ingredients: product?.ingredients ?? customIngredients.filter((i) => i.amount > 0),
       slots,
       remaining: Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : undefined,
     });
@@ -136,9 +139,9 @@ function AddPage() {
               onSubmitEditing={Keyboard.dismiss}
               autoFocus
             />
-            <Text style={styles.hint}>
-              성분을 모르면 비워두셔도 돼요. 대신 겹치는 성분 점검은 못 해드려요.
-            </Text>
+            <View style={{ height: 16 }} />
+            <Text style={styles.cardLabel}>들어있는 성분 <Text style={styles.optional}>(선택)</Text></Text>
+            <IngredientPicker value={customIngredients} onChange={setCustomIngredients} />
           </View>
         )}
 
