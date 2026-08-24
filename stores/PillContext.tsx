@@ -1,6 +1,6 @@
 import { Storage } from '@apps-in-toss/framework';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { DailyRecord, Intake, Pill } from '../data/types';
+import { DailyRecord, Intake, Pill, normalizeRecord } from '../data/types';
 import { generateId, todayStr } from '../data/utils';
 
 const PILLS_KEY = '@pillcheck/pills';
@@ -21,6 +21,12 @@ interface PillContextType {
   deletePill: (id: string) => Promise<void>;
   toggleIntake: (pillId: string, time: string) => Promise<void>;
   getHistoryRecord: (date: string) => Promise<DailyRecord | null>;
+  /** 광고 시청 후 스탬프 1개 발급 (지급 아님) */
+  issueStamp: () => Promise<void>;
+  /** 미수령 스탬프 1개 수령 처리. 실제로 수령했으면 true (호출측에서 true일 때만 포인트 지급) */
+  claimStamp: () => Promise<boolean>;
+  /** 전량 복용 완주 보너스 수령 처리. 처음 수령이면 true */
+  claimCompletionBonus: () => Promise<boolean>;
 }
 
 const PillContext = createContext<PillContextType | undefined>(undefined);
@@ -39,8 +45,12 @@ export function PillProvider({ children }: { children: ReactNode }) {
   useEffect(() => { maxSlotsRef.current = maxSlots; }, [maxSlots]);
   useEffect(() => { todayRecordRef.current = todayRecord; }, [todayRecord]);
 
-  const buildRecord = (date: string, existingIntakes: Intake[], currentPills: Pill[]): DailyRecord => {
-    const intakes = [...existingIntakes];
+  const buildRecord = (
+    date: string,
+    existing: Pick<DailyRecord, 'intakes' | 'stamped' | 'claimedStamps' | 'bonusClaimed'>,
+    currentPills: Pill[],
+  ): DailyRecord => {
+    const intakes = [...existing.intakes];
     for (const pill of currentPills) {
       for (const time of pill.times) {
         if (!intakes.find((i) => i.pillId === pill.id && i.time === time)) {
@@ -50,7 +60,14 @@ export function PillProvider({ children }: { children: ReactNode }) {
     }
     // Remove intakes for deleted pills
     const activeIds = new Set(currentPills.map((p) => p.id));
-    return { date, intakes: intakes.filter((i) => activeIds.has(i.pillId)) };
+    return {
+      date,
+      intakes: intakes.filter((i) => activeIds.has(i.pillId)),
+      // 스탬프/보너스 상태는 영양제 목록이 바뀌어도 유지한다
+      stamped: existing.stamped ?? 0,
+      claimedStamps: existing.claimedStamps ?? 0,
+      bonusClaimed: existing.bonusClaimed ?? false,
+    };
   };
 
   const loadAll = useCallback(async () => {
@@ -63,8 +80,12 @@ export function PillProvider({ children }: { children: ReactNode }) {
         Storage.getItem(MAX_SLOTS_KEY),
       ]);
       const loadedPills: Pill[] = pillsRaw ? JSON.parse(pillsRaw) : [];
-      const existingIntakes: Intake[] = recordRaw ? (JSON.parse(recordRaw) as DailyRecord).intakes : [];
-      const record = buildRecord(today, existingIntakes, loadedPills);
+      const stored: DailyRecord | null = recordRaw ? (JSON.parse(recordRaw) as DailyRecord) : null;
+      const record = buildRecord(
+        today,
+        stored ? normalizeRecord(stored) : { intakes: [], stamped: 0, claimedStamps: 0, bonusClaimed: false },
+        loadedPills,
+      );
       setPills(loadedPills);
       setTodayRecord(record);
       if (maxSlotsRaw) setMaxSlots(JSON.parse(maxSlotsRaw));
@@ -148,13 +169,48 @@ export function PillProvider({ children }: { children: ReactNode }) {
     setMaxSlots(next);
   };
 
+  /**
+   * 목돈식 지급 분리 — 광고는 스탬프 "발급"까지만, 포인트 "지급"은 유저가 스탬프를 탭할 때.
+   * 발급된 스탬프는 체크를 해제해도 회수하지 않는다(이미 광고를 본 대가라 회수는 불이익).
+   */
+  const issueStamp = async () => {
+    const rec = normalizeRecord(todayRecordRef.current);
+    const takenCount = rec.intakes.filter((i) => i.taken).length;
+    if (rec.stamped >= takenCount) return; // 발급 한도(체크한 횟수) 초과
+    await persistRecord({ ...rec, stamped: rec.stamped + 1 });
+  };
+
+  const claimStamp = async (): Promise<boolean> => {
+    const rec = normalizeRecord(todayRecordRef.current);
+    if (rec.claimedStamps >= rec.stamped) return false; // 미수령 스탬프 없음
+    await persistRecord({ ...rec, claimedStamps: rec.claimedStamps + 1 });
+    return true;
+  };
+
+  const claimCompletionBonus = async (): Promise<boolean> => {
+    const rec = normalizeRecord(todayRecordRef.current);
+    if (rec.bonusClaimed) return false;
+    const intakes = rec.intakes;
+    if (intakes.length === 0 || intakes.some((i) => !i.taken)) return false; // 아직 완주 전
+    await persistRecord({ ...rec, bonusClaimed: true });
+    return true;
+  };
+
   const replacePills = async (newPillDefs: Omit<Pill, 'id'>[]) => {
     const today = todayStr();
     const newPills: Pill[] = newPillDefs.map((p) => ({ ...p, id: generateId() }));
     const newIntakes = newPills.flatMap((pill) =>
       pill.times.map((time) => ({ pillId: pill.id, pillName: pill.name, time, taken: false }))
     );
-    const newRecord: DailyRecord = { date: today, intakes: newIntakes };
+    // 플랜을 갈아끼워도 오늘 발급/수령한 스탬프와 보너스 상태는 유지한다
+    const prev = normalizeRecord(todayRecordRef.current);
+    const newRecord: DailyRecord = {
+      date: today,
+      intakes: newIntakes,
+      stamped: prev.stamped,
+      claimedStamps: prev.claimedStamps,
+      bonusClaimed: prev.bonusClaimed,
+    };
     await Storage.setItem(PILLS_KEY, JSON.stringify(newPills));
     await Storage.setItem(RECORD_KEY(today), JSON.stringify(newRecord));
     setPills(newPills);
@@ -168,7 +224,11 @@ export function PillProvider({ children }: { children: ReactNode }) {
 
   return (
     <PillContext.Provider
-      value={{ pills, todayRecord, loading, maxSlots, increaseSlot, decreaseSlot, replacePills, addPill, updatePill, deletePill, toggleIntake, getHistoryRecord }}
+      value={{
+        pills, todayRecord, loading, maxSlots, increaseSlot, decreaseSlot, replacePills,
+        addPill, updatePill, deletePill, toggleIntake, getHistoryRecord,
+        issueStamp, claimStamp, claimCompletionBonus,
+      }}
     >
       {children}
     </PillContext.Provider>

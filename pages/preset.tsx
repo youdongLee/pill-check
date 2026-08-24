@@ -1,5 +1,5 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd, loadFullScreenAd, showFullScreenAd } from '@apps-in-toss/framework';
+import { InlineAd } from '@apps-in-toss/framework';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -21,6 +21,8 @@ import { usePills } from '../stores/PillContext';
 import { usePresets, Preset } from '../stores/PresetContext';
 import { Pill } from '../data/types';
 import { PRESET_TIMES } from '../data/constants';
+import { AD_IDS } from '../src/ads';
+import { useRewardAd } from '../src/useRewardAd';
 
 export const Route = createRoute('/preset', { component: PresetPage });
 
@@ -30,7 +32,6 @@ const GRID_CELL_WIDTH = Math.floor((SCREEN_WIDTH - 32) / 3);
 const PRIMARY = '#22C55E';
 const PRIMARY_DARK = '#16A34A';
 const PRIMARY_LIGHT = '#DCFCE7';
-const REWARD_AD_ID = 'ait.v2.live.7848babf27974479';
 const DEFAULT_PLAN_SLOTS = 3;
 
 const DAYS = [
@@ -56,9 +57,7 @@ function PresetPage() {
   const { pills, replacePills } = usePills();
   const { presets, maxPresets, daySchedule, savePreset, updatePreset, deletePreset, assignDay, unassignDay, increasePresetSlot } = usePresets();
 
-  const adSupported = showFullScreenAd.isSupported();
-  const [adLoaded, setAdLoaded] = useState(!adSupported);
-  const pendingAdCallback = useRef<(() => void) | null>(null);
+  const { adLoaded, show } = useRewardAd(AD_IDS.rewardSlot);
   const planNameInputRef = useRef<any>(null);
 
   // ── 이름 입력 모달 (현재 구성 저장용) ──
@@ -92,43 +91,8 @@ function PresetPage() {
   const pFinalName = pIsCustom ? pCustomName : pName;
   const pIsValid = pFinalName.trim().length > 0 && pTimes.length > 0;
 
-  useEffect(() => {
-    if (!loadFullScreenAd.isSupported()) return;
-    const unregister = loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (e) => { if (e.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-    return () => unregister();
-  }, []);
-
-  const loadNextAd = () => {
-    if (!loadFullScreenAd.isSupported()) return;
-    setAdLoaded(false);
-    loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (e) => { if (e.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-  };
-
-  // 광고 보고 콜백 실행 (dev: 즉시 실행)
-  const playAdThen = (callback: () => void) => {
-    if (!adSupported) { callback(); return; }
-    pendingAdCallback.current = callback;
-    showFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (e) => {
-        if (e.type === 'userEarnedReward') {
-          const cb = pendingAdCallback.current;
-          pendingAdCallback.current = null;
-          cb?.();
-        }
-        if (e.type === 'dismissed') loadNextAd();
-      },
-      onError: () => Alert.alert('광고를 불러올 수 없어요. 잠시 후 다시 시도해주세요.'),
-    });
-  };
+  // 광고 보고 콜백 실행 (공용 훅: 로드 1개만 유지 + 순차 폴백, dev 환경은 즉시 실행)
+  const playAdThen = (callback: () => void) => show(callback);
 
   // ── 현재 구성 저장 ──
   const handleOpenSaveModal = () => {
@@ -406,7 +370,7 @@ function PresetPage() {
       {/* 배너 광고 */}
       <View style={styles.banner}>
         <InlineAd
-          adGroupId="ait.v2.live.a0ee7a06ab474249"
+          adGroupId={AD_IDS.presetFeed}
           theme="light"
           tone="grey"
           variant="expanded"
@@ -808,7 +772,7 @@ function PresetPage() {
           {/* 배너 광고 */}
           <View style={styles.banner}>
             <InlineAd
-              adGroupId="ait.v2.live.a0ee7a06ab474249"
+              adGroupId={AD_IDS.presetFeed}
               theme="light"
               tone="grey"
               variant="expanded"

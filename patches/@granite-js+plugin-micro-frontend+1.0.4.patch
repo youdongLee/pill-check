@@ -1,0 +1,26 @@
+diff --git a/node_modules/@granite-js/plugin-micro-frontend/dist/index.cjs b/node_modules/@granite-js/plugin-micro-frontend/dist/index.cjs
+index 666b7c6..561aa5c 100644
+--- a/node_modules/@granite-js/plugin-micro-frontend/dist/index.cjs
++++ b/node_modules/@granite-js/plugin-micro-frontend/dist/index.cjs
+@@ -47,7 +47,7 @@ function getPreludeConfig(options) {
+ 	const exposeStatements = Object.entries(options.exposes ?? {}).map(([exposeName, modulePath], index) => {
+ 		const identifier = `__expose${index}`;
+ 		return `
+-    import * as ${identifier} from '${path.default.resolve(modulePath)}';
++    import * as ${identifier} from '${path.default.resolve(modulePath).replace(/\\/g, "/")}';
+     exposeModule(__container, '${exposeName}', ${identifier});
+     `;
+ 	});
+diff --git a/node_modules/@granite-js/plugin-micro-frontend/dist/index.js b/node_modules/@granite-js/plugin-micro-frontend/dist/index.js
+index f490ab9..39de051 100644
+--- a/node_modules/@granite-js/plugin-micro-frontend/dist/index.js
++++ b/node_modules/@granite-js/plugin-micro-frontend/dist/index.js
+@@ -17,7 +17,7 @@ function getPreludeConfig(options) {
+ 	const exposeStatements = Object.entries(options.exposes ?? {}).map(([exposeName, modulePath], index) => {
+ 		const identifier = `__expose${index}`;
+ 		return `
+-    import * as ${identifier} from '${path.resolve(modulePath)}';
++    import * as ${identifier} from '${path.resolve(modulePath).replace(/\\/g, "/")}';
+     exposeModule(__container, '${exposeName}', ${identifier});
+     `;
+ 	});

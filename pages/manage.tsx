@@ -1,5 +1,5 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd, loadFullScreenAd, showFullScreenAd } from '@apps-in-toss/framework';
+import { InlineAd } from '@apps-in-toss/framework';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -17,6 +17,8 @@ import {
   View,
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
+import { AD_IDS } from '../src/ads';
+import { useRewardAd } from '../src/useRewardAd';
 import { Pill } from '../data/types';
 import { formatTime } from '../data/utils';
 import { PRESET_TIMES } from '../data/constants';
@@ -26,7 +28,6 @@ export const Route = createRoute('/manage', { component: ManagePage });
 const PRIMARY = '#22C55E';
 const PRIMARY_DARK = '#16A34A';
 const PRIMARY_LIGHT = '#DCFCE7';
-const REWARD_AD_ID = 'ait.v2.live.7848babf27974479';
 
 const ICONS = [
   { emoji: '💊', color: '#22C55E' },
@@ -40,46 +41,15 @@ function ManagePage() {
   const navigation = Route.useNavigation();
   const { pills, maxSlots, increaseSlot, decreaseSlot, addPill, deletePill, updatePill } = usePills();
 
-  // --- Reward ad ---
-  const [adLoaded, setAdLoaded] = useState(false);
+  // --- Reward ad (공용 훅: 로드 1개만 유지 + 순차 폴백) ---
+  const { adLoaded, playing, show } = useRewardAd(AD_IDS.rewardSlot);
   const [showSlotModal, setShowSlotModal] = useState(false);
 
-  useEffect(() => {
-    if (!loadFullScreenAd.isSupported()) return;
-    const unregister = loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (event) => { if (event.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-    return () => unregister();
-  }, []);
-
-  const loadNextAd = () => {
-    if (!loadFullScreenAd.isSupported()) return;
-    setAdLoaded(false);
-    loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (event) => { if (event.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-  };
-
   const handleWatchAd = () => {
-    if (!showFullScreenAd.isSupported()) {
-      Alert.alert('지원되지 않는 환경이에요.');
-      return;
-    }
     setShowSlotModal(false);
-    showFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: async (event) => {
-        if (event.type === 'userEarnedReward') {
-          await increaseSlot();
-          Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
-        }
-        if (event.type === 'dismissed') loadNextAd();
-      },
-      onError: () => Alert.alert('광고를 불러올 수 없어요. 잠시 후 다시 시도해주세요.'),
+    show(async () => {
+      await increaseSlot();
+      Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
     });
   };
 
@@ -305,7 +275,7 @@ function ManagePage() {
       {/* 배너 광고 */}
       <View style={styles.banner}>
         <InlineAd
-          adGroupId="ait.v2.live.a0ee7a06ab474249"
+          adGroupId={AD_IDS.manageFeed}
           theme="light"
           tone="grey"
           variant="expanded"

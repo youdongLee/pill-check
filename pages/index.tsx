@@ -1,10 +1,10 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd, loadFullScreenAd, showFullScreenAd } from '@apps-in-toss/framework';
-import { grantPromotionReward } from '@apps-in-toss/native-modules';
+import { InlineAd } from '@apps-in-toss/framework';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
@@ -21,20 +21,21 @@ import {
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
 import { useStamps } from '../stores/StampContext';
-import { Pill, Intake } from '../data/types';
+import { Pill, Intake, normalizeRecord } from '../data/types';
 import { PRESET_TIMES } from '../data/constants';
-import { formatKoreanDate, todayStr, getDatesBack } from '../data/utils';
+import { formatKoreanDate, todayStr } from '../data/utils';
+import { AD_IDS, PROMO } from '../src/ads';
+import { grantReward } from '../src/reward';
+import { useRewardAd } from '../src/useRewardAd';
+import {
+  COMPLETION_BONUS, INTAKE_REWARD, PRIMARY, PRIMARY_DARK, PRIMARY_LIGHT, STREAK_BONUS, STREAK_DAYS,
+} from '../src/theme';
 
 export const Route = createRoute('/', { component: HomePage });
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_CELL_WIDTH = Math.floor((SCREEN_WIDTH - 32) / 3); // 32 = paddingHorizontal 16*2
 
-const PRIMARY = '#22C55E';
-const PRIMARY_DARK = '#16A34A';
-const PRIMARY_LIGHT = '#DCFCE7';
-
-const REWARD_AD_ID = 'ait.v2.live.7848babf27974479';
 const NAME_PRESETS = ['종합 비타민', '비타민 B', '비타민 C', '비타민 D', '오메가3', '마그네슘', '칼슘'];
 const ICONS = [
   { emoji: '💊', color: '#22C55E' },
@@ -45,81 +46,51 @@ const UNITS = ['알', 'mg', 'ml'];
 
 function HomePage() {
   const navigation = Route.useNavigation();
-  const { pills, todayRecord, loading, toggleIntake, addPill, maxSlots, increaseSlot } = usePills();
-  const { stamps, todayStamped, currentStreak, canClaimStreakReward, earnTodayStamp, claimStreakReward } = useStamps();
+  const {
+    pills, todayRecord, loading, toggleIntake, addPill, maxSlots, increaseSlot,
+    issueStamp, claimStamp, claimCompletionBonus,
+  } = usePills();
+  const { currentStreak, canClaimStreakReward, markTodayComplete, claimStreakReward } = useStamps();
 
-  const adSupported = loadFullScreenAd.isSupported();
+  const { adLoaded, playing, show } = useRewardAd(AD_IDS.reward);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
-  const [adLoaded, setAdLoaded] = useState(!adSupported); // dev: treat as loaded
-  const pendingReward = useRef<'slot' | 'stamp' | 'streak' | null>(null);
 
-  useEffect(() => {
-    if (!loadFullScreenAd.isSupported()) return;
-    const unregister = loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (event) => { if (event.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-    return () => unregister();
-  }, []);
+  const record = normalizeRecord(todayRecord);
 
-  const loadNextAd = () => {
-    if (!loadFullScreenAd.isSupported()) return;
-    setAdLoaded(false);
-    loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (event) => { if (event.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
+  /**
+   * 목돈식 지급 분리:
+   *  - 광고는 스탬프 "발급"까지만 (여기서는 포인트를 주지 않는다)
+   *  - 포인트 "지급"은 유저가 스탬프를 직접 탭할 때
+   *  - 보너스 2종은 광고 없이 탭 지급 (광고=지급 직결 구조를 끊는다)
+   */
+  const onIssueStamp = () => {
+    show(async () => {
+      await issueStamp();
     });
   };
 
-  const showRewardAd = async (action: 'slot' | 'stamp' | 'streak') => {
-    if (!adSupported) {
-      // 개발 환경: 광고 없이 바로 실행
-      if (action === 'slot') { await increaseSlot(); Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.'); }
-      else if (action === 'stamp') { await earnTodayStamp(); Alert.alert('🏅 도장 획득!', '오늘의 복약 미션을 완료했어요!'); }
-      else if (action === 'streak') {
-        await claimStreakReward();
-        try { await grantPromotionReward({ params: { promotionCode: 'PILLCHECK_STREAK_7', amount: 5 } }); Alert.alert('🏆 토스포인트 5p 지급!', '7일 연속 복약 미션을 완료했어요!'); }
-        catch { Alert.alert('🏆 7일 연속 달성!', '포인트 지급은 잠시 후 자동으로 처리돼요.'); }
-      }
-      return;
-    }
-    pendingReward.current = action;
-    showFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: async (event) => {
-        if (event.type === 'userEarnedReward') {
-          const action = pendingReward.current;
-          if (action === 'slot') {
-            await increaseSlot();
-            Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
-          } else if (action === 'stamp') {
-            await earnTodayStamp();
-            Alert.alert('🏅 도장 획득!', '오늘의 복약 미션을 완료했어요!');
-          } else if (action === 'streak') {
-            await claimStreakReward();
-            try {
-              await grantPromotionReward({ params: { promotionCode: 'PILLCHECK_STREAK_7', amount: 5 } });
-              Alert.alert('🏆 토스포인트 5p 지급!', '7일 연속 복약 미션을 완료했어요!');
-            } catch {
-              Alert.alert('🏆 7일 연속 달성!', '포인트 지급은 잠시 후 자동으로 처리돼요.');
-            }
-          }
-        }
-        if (event.type === 'dismissed') {
-          pendingReward.current = null;
-          loadNextAd();
-        }
-      },
-      onError: () => Alert.alert('광고를 불러올 수 없어요. 잠시 후 다시 시도해주세요.'),
-    });
+  const onClaimStamp = async () => {
+    const ok = await claimStamp();
+    if (ok) await grantReward(PROMO.intake, INTAKE_REWARD);
+  };
+
+  const onClaimCompletion = async () => {
+    const ok = await claimCompletionBonus();
+    if (ok) await grantReward(PROMO.bonus, COMPLETION_BONUS);
+  };
+
+  const onClaimStreak = async () => {
+    const ok = await claimStreakReward();
+    if (ok) await grantReward(PROMO.streak, STREAK_BONUS);
   };
 
   const handleWatchAd = () => {
     setShowSlotModal(false);
-    showRewardAd('slot');
+    show(async () => {
+      await increaseSlot();
+      Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
+    });
   };
 
   const [selectedName, setSelectedName] = useState('');
@@ -214,8 +185,32 @@ function HomePage() {
   const totalCount = activeIntakes.length;
   const progress = totalCount > 0 ? takenCount / totalCount : 0;
   const allDone = totalCount > 0 && takenCount === totalCount;
-  const last7Days = getDatesBack(7).reverse(); // 오래된 날 → 오늘 순
-  const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+  // 스탬프 3상태: 수령완료(✓) / 미수령(₩, 탭하면 지급) / 미발급(광고를 봐야 발급)
+  const stampSlots = Math.max(totalCount, record.stamped);
+  const earnableStamps = Math.max(0, takenCount - record.stamped);
+  const unclaimedStamps = Math.max(0, record.stamped - record.claimedStamps);
+
+  // 전량 복용을 채우면 연속 기록용 완주일로 남긴다 (광고 없음)
+  useEffect(() => {
+    if (allDone) markTodayComplete();
+    // markTodayComplete는 매 렌더 새 참조라 deps에서 제외한다(내부에서 중복 기록을 막는다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDone]);
+
+  // 미수령 스탬프 아래 👆 손가락 — 5060 타깃, 탭 대상을 직관적으로
+  const fingerBounce = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (unclaimedStamps === 0) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(fingerBounce, { toValue: -4, duration: 380, useNativeDriver: true }),
+        Animated.timing(fingerBounce, { toValue: 0, duration: 380, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [unclaimedStamps, fingerBounce]);
 
   const sortedIntakes = useMemo(
     () => [...activeIntakes].sort((a, b) => a.time.localeCompare(b.time)),
@@ -263,80 +258,87 @@ function HomePage() {
           </View>
         </View>
 
-        {/* 미션 도장 (카드 내부) */}
-        {(pills.length > 0 || stamps.length > 0) && (
+        {/* 복용 스탬프 (카드 내부) — 광고=발급, 탭=지급 */}
+        {stampSlots > 0 && (
           <>
             <View style={styles.cardDivider} />
             <View style={styles.stampInCard}>
               <View style={styles.stampHeader}>
-                <Text style={styles.stampTitle}>미션 도장</Text>
+                <Text style={styles.stampTitle}>복용 스탬프</Text>
                 {currentStreak > 0 && (
                   <Text style={styles.streakBadge}>🔥 {currentStreak}일 연속</Text>
                 )}
               </View>
+
+              {/* 스탬프 판: 수령완료(✓) / 미수령(₩, 탭 지급 — 아래 👆 표시) / 미발급(빈칸) */}
               <View style={styles.stampGrid}>
-                {last7Days.map((date) => {
-                  const stamped = stamps.includes(date);
-                  const isToday = date === todayStr();
-                  const d = new Date(date.replace(/-/g, '/'));
+                {Array.from({ length: stampSlots }).map((_, i) => {
+                  const isClaimed = i < record.claimedStamps;
+                  const isReady = !isClaimed && i < record.stamped;
                   return (
-                    <View key={date} style={styles.stampDayCol}>
-                      <View style={[styles.stampCircle, stamped && styles.stampCircleDone, isToday && !stamped && styles.stampCircleToday]}>
-                        <Text style={styles.stampCircleText}>{stamped ? '🏅' : ''}</Text>
-                      </View>
-                      <Text style={[styles.stampDayLabel, isToday && { color: PRIMARY_DARK, fontWeight: '700' }]}>
-                        {isToday ? '오늘' : DAY_NAMES[d.getDay()]}
-                      </Text>
+                    <View key={i} style={styles.stampSlot}>
+                      <TouchableOpacity
+                        disabled={!isReady}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 8, bottom: 20, left: 4, right: 4 }}
+                        onPress={onClaimStamp}
+                        style={[styles.stampCircle, isClaimed && styles.stampCircleDone, isReady && styles.stampCircleReady]}
+                      >
+                        <Text style={[styles.stampCircleText, isReady && styles.stampCircleTextReady]}>
+                          {isClaimed ? '✓' : isReady ? '₩' : ''}
+                        </Text>
+                      </TouchableOpacity>
+                      {/* 손가락 자리는 항상 확보(줄 높이 고정), 미수령일 때만 보임 */}
+                      <Animated.Text
+                        style={[
+                          styles.stampFinger,
+                          { opacity: isReady ? 1 : 0, transform: [{ translateY: fingerBounce }] },
+                        ]}
+                      >
+                        👆
+                      </Animated.Text>
                     </View>
                   );
                 })}
               </View>
-              {allDone && !todayStamped && (
+
+              {unclaimedStamps > 0 && (
+                <Text style={styles.stampHint}>
+                  👆 스탬프 {unclaimedStamps}개를 누르면 개당 {INTAKE_REWARD}원!
+                </Text>
+              )}
+
+              {/* 광고 = 스탬프 발급 (지급 아님) */}
+              {earnableStamps > 0 && (
                 <TouchableOpacity
-                  style={[styles.stampActionBtn, !adLoaded && styles.stampActionBtnDisabled]}
-                  onPress={() => {
-                    Alert.alert(
-                      '오늘의 도장 받기',
-                      '짧은 광고를 보고 오늘의 복약 도장을 받아보세요!',
-                      [
-                        { text: '취소', style: 'cancel' },
-                        { text: '광고 보고 도장 받기', onPress: () => showRewardAd('stamp') },
-                      ],
-                    );
-                  }}
-                  disabled={!adLoaded}
+                  style={[styles.stampActionBtn, (playing || !adLoaded) && styles.stampActionBtnDisabled]}
+                  onPress={onIssueStamp}
+                  disabled={playing || !adLoaded}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.stampActionBtnText}>
-                    {adLoaded ? '🎯 광고 보고 오늘 도장 받기' : '광고 준비 중...'}
+                    {playing ? '광고 재생 중...' : adLoaded ? `📺 광고 보고 스탬프 받기 (${earnableStamps}개 대기)` : '광고 준비 중...'}
                   </Text>
                 </TouchableOpacity>
               )}
-              {todayStamped && !canClaimStreakReward && (
-                <View style={styles.stampDoneRow}>
-                  <Text style={styles.stampDoneText}>🏅 오늘 도장 완료!</Text>
-                </View>
+
+              {/* 보너스 2종 = 광고 없이 탭 지급 */}
+              {allDone && !record.bonusClaimed && (
+                <TouchableOpacity style={styles.bonusBtn} onPress={onClaimCompletion} activeOpacity={0.85}>
+                  <Text style={styles.bonusBtnTitle}>🎁 오늘 전부 복용 완료!</Text>
+                  <Text style={styles.bonusBtnSub}>{`탭해서 ${COMPLETION_BONUS}원 받기`}</Text>
+                </TouchableOpacity>
               )}
               {canClaimStreakReward && (
-                <TouchableOpacity
-                  style={[styles.streakActionBtn, !adLoaded && styles.stampActionBtnDisabled]}
-                  onPress={() => {
-                    Alert.alert(
-                      '7일 연속 달성!',
-                      '짧은 광고를 보고 토스포인트 5p를 받아보세요!',
-                      [
-                        { text: '취소', style: 'cancel' },
-                        { text: '광고 보고 포인트 받기', onPress: () => showRewardAd('streak') },
-                      ],
-                    );
-                  }}
-                  disabled={!adLoaded}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.streakActionBtnText}>
-                    {adLoaded ? '🏆 7일 연속! 광고 보고 토스포인트 받기' : '광고 준비 중...'}
-                  </Text>
+                <TouchableOpacity style={styles.streakActionBtn} onPress={onClaimStreak} activeOpacity={0.85}>
+                  <Text style={styles.bonusBtnTitle}>🏆 {STREAK_DAYS}일 연속 복용 달성!</Text>
+                  <Text style={styles.bonusBtnSub}>{`탭해서 ${STREAK_BONUS}원 받기`}</Text>
                 </TouchableOpacity>
+              )}
+              {allDone && record.bonusClaimed && !canClaimStreakReward && earnableStamps === 0 && unclaimedStamps === 0 && (
+                <View style={styles.stampDoneRow}>
+                  <Text style={styles.stampDoneText}>🎉 오늘 몫은 모두 받았어요</Text>
+                </View>
               )}
             </View>
           </>
@@ -387,7 +389,7 @@ function HomePage() {
       {/* 배너 광고 */}
       <View style={styles.banner}>
         <InlineAd
-          adGroupId="ait.v2.live.a0ee7a06ab474249"
+          adGroupId={AD_IDS.homeBanner}
           theme="light"
           tone="grey"
           variant="expanded"
@@ -796,7 +798,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 8 },
   emptyDesc: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', lineHeight: 22 },
 
-  // 미션 도장 섹션 (카드 내부)
+  // 복용 스탬프 섹션 (카드 내부)
   stampInCard: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -805,8 +807,8 @@ const styles = StyleSheet.create({
   stampHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   stampTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
   streakBadge: { fontSize: 13, fontWeight: '700', color: '#F59E0B' },
-  stampGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  stampDayCol: { alignItems: 'center', flex: 1 },
+  stampGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 4 },
+  stampSlot: { alignItems: 'center', width: 46 },
   stampCircle: {
     width: 36,
     height: 36,
@@ -816,19 +818,23 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
   },
   stampCircleDone: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  stampCircleToday: { borderColor: PRIMARY, borderWidth: 2 },
-  stampCircleText: { fontSize: 18 },
-  stampDayLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
-  stampActionBtn: { backgroundColor: PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  // 미수령 = 눈에 띄게(금색), 탭 유도
+  stampCircleReady: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 2 },
+  stampCircleText: { fontSize: 16, fontWeight: '800', color: PRIMARY_DARK },
+  stampCircleTextReady: { color: '#B45309' },
+  stampFinger: { fontSize: 14, height: 20, lineHeight: 20 },
+  stampHint: { fontSize: 13, fontWeight: '700', color: '#B45309', textAlign: 'center', marginBottom: 10 },
+  stampActionBtn: { backgroundColor: PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   stampActionBtnDisabled: { backgroundColor: '#D1D5DB' },
   stampActionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   stampDoneRow: { alignItems: 'center', paddingVertical: 6 },
   stampDoneText: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
-  streakActionBtn: { backgroundColor: '#F59E0B', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
-  streakActionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  bonusBtn: { backgroundColor: PRIMARY_DARK, borderRadius: 12, paddingVertical: 11, alignItems: 'center', marginTop: 8 },
+  bonusBtnTitle: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
+  bonusBtnSub: { fontSize: 12, fontWeight: '600', color: '#FFFFFF', opacity: 0.9, marginTop: 2 },
+  streakActionBtn: { backgroundColor: '#F59E0B', borderRadius: 12, paddingVertical: 11, alignItems: 'center', marginTop: 8 },
 
   banner: { width: '100%', height: 96, overflow: 'hidden' },
 
