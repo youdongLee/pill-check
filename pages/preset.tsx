@@ -1,6 +1,6 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd, loadFullScreenAd, showFullScreenAd } from '@apps-in-toss/framework';
-import React, { useEffect, useRef, useState } from 'react';
+import { InlineAd } from '@apps-in-toss/framework';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -21,6 +21,8 @@ import { usePills } from '../stores/PillContext';
 import { usePresets, Preset } from '../stores/PresetContext';
 import { Pill } from '../data/types';
 import { PRESET_TIMES } from '../data/constants';
+import { AD_IDS } from '../src/ads';
+import { AdGuide, useRewardAd } from '../src/useRewardAd';
 
 export const Route = createRoute('/preset', { component: PresetPage });
 
@@ -30,7 +32,6 @@ const GRID_CELL_WIDTH = Math.floor((SCREEN_WIDTH - 32) / 3);
 const PRIMARY = '#22C55E';
 const PRIMARY_DARK = '#16A34A';
 const PRIMARY_LIGHT = '#DCFCE7';
-const REWARD_AD_ID = 'ait.v2.live.7848babf27974479';
 const DEFAULT_PLAN_SLOTS = 3;
 
 const DAYS = [
@@ -56,9 +57,9 @@ function PresetPage() {
   const { pills, replacePills } = usePills();
   const { presets, maxPresets, daySchedule, savePreset, updatePreset, deletePreset, assignDay, unassignDay, increasePresetSlot } = usePresets();
 
-  const adSupported = showFullScreenAd.isSupported();
-  const [adLoaded, setAdLoaded] = useState(!adSupported);
-  const pendingAdCallback = useRef<(() => void) | null>(null);
+  // 플랜 화면은 저장·적용·자리 추가가 전부 광고라 들어오면 하나만 미리 불러둔다
+  const ad = useRewardAd(true);
+  const adLoaded = ad.loaded;
   const planNameInputRef = useRef<any>(null);
 
   // ── 이름 입력 모달 (현재 구성 저장용) ──
@@ -92,42 +93,20 @@ function PresetPage() {
   const pFinalName = pIsCustom ? pCustomName : pName;
   const pIsValid = pFinalName.trim().length > 0 && pTimes.length > 0;
 
-  useEffect(() => {
-    if (!loadFullScreenAd.isSupported()) return;
-    const unregister = loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (e) => { if (e.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-    return () => unregister();
-  }, []);
-
-  const loadNextAd = () => {
-    if (!loadFullScreenAd.isSupported()) return;
-    setAdLoaded(false);
-    loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (e) => { if (e.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
+  /**
+   * 광고 끝까지 본 뒤 callback. guide 가 있으면 안내 창을 먼저 띄운다.
+   * guide 가 없는 호출은 이미 '광고 보고 ○○' 버튼이 있는 창에서 누른 경우뿐이다.
+   */
+  const playAdThen = (callback: () => void | Promise<void>, guide?: AdGuide) => {
+    if (!ad.loaded) return;
+    if (guide) ad.confirmAndPlay(guide, callback);
+    else ad.confirmAndPlay({ title: '광고 보기', message: '짧은 광고를 보고 계속할 수 있어요.', confirm: '광고 보기' }, callback);
   };
 
-  // 광고 보고 콜백 실행 (dev: 즉시 실행)
-  const playAdThen = (callback: () => void) => {
-    if (!adSupported) { callback(); return; }
-    pendingAdCallback.current = callback;
-    showFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (e) => {
-        if (e.type === 'userEarnedReward') {
-          const cb = pendingAdCallback.current;
-          pendingAdCallback.current = null;
-          cb?.();
-        }
-        if (e.type === 'dismissed') loadNextAd();
-      },
-      onError: () => Alert.alert('광고를 불러올 수 없어요. 잠시 후 다시 시도해주세요.'),
-    });
+  /** 이미 '광고 보고 ○○' 안내 창(시트·Alert)에서 누른 경우 → 바로 광고 */
+  const playDirect = (callback: () => void | Promise<void>) => {
+    if (!ad.loaded) return;
+    ad.play(callback);
   };
 
   // ── 현재 구성 저장 ──
@@ -142,7 +121,7 @@ function PresetPage() {
     const name = saveName.trim();
     if (!name) return;
     setShowSaveModal(false);
-    playAdThen(async () => {
+    playDirect(async () => {
       setSaving(true);
       await savePreset(name, pills.map(({ id: _id, ...rest }) => rest));
       setSaving(false);
@@ -153,7 +132,7 @@ function PresetPage() {
   // ── 새 플랜 추가 ──
   const handleAddNewPlan = () => {
     if (atPresetLimit) { promptSlotAdd(); return; }
-    playAdThen(() => openPlanNameInput());
+    playAdThen(() => openPlanNameInput(), { title: '새 플랜 추가', message: '짧은 광고를 보고 새 플랜을 만들 수 있어요.', confirm: '광고 보고 추가' });
   };
 
   const [showPlanNameModal, setShowPlanNameModal] = useState(false);
@@ -203,7 +182,7 @@ function PresetPage() {
     playAdThen(() => {
       setPlanMaxSlots((prev) => prev + 1);
       Alert.alert('슬롯 추가!', '영양제를 1개 더 추가할 수 있어요.');
-    });
+    }, { title: '플랜 슬롯 추가', message: '짧은 광고를 보고 이 플랜에 영양제를 1개 더 넣을 수 있어요.', confirm: '광고 보고 추가' });
   };
 
   // ── 플랜 빌더 내 영양제 추가 ──
@@ -257,7 +236,7 @@ function PresetPage() {
     }
     playAdThen(async () => {
       await assignDay(day, presetId);
-    });
+    }, { title: '요일 자동 제안', message: '짧은 광고를 보고 이 요일에 플랜을 자동으로 제안받을 수 있어요.', confirm: '광고 보고 설정' });
   };
 
   // ── 플랜 슬롯 추가 ──
@@ -267,7 +246,7 @@ function PresetPage() {
       `현재 최대 ${maxPresets}개까지 저장할 수 있어요.\n광고를 보면 슬롯을 1개 더 추가할 수 있어요.`,
       [
         { text: '취소', style: 'cancel' },
-        { text: adLoaded ? '광고 보고 추가' : '광고 준비 중...', onPress: () => { if (adLoaded) playAdThen(async () => { await increasePresetSlot(); Alert.alert('플랜 슬롯 추가!', '플랜을 1개 더 저장할 수 있어요.'); }); } },
+        { text: adLoaded ? '광고 보고 추가' : '광고 준비 중...', onPress: () => { if (adLoaded) playDirect(async () => { await increasePresetSlot(); Alert.alert('플랜 슬롯 추가!', '플랜을 1개 더 저장할 수 있어요.'); }); } },
       ]
     );
   };
@@ -297,6 +276,11 @@ function PresetPage() {
         <TouchableOpacity onPress={() => setShowHelp(true)} activeOpacity={0.7} style={styles.helpBtn}>
           <Text style={styles.helpBtnText}>?</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* 최상단 배너 (라이브와 동일) */}
+      <View style={styles.banner}>
+        <InlineAd adGroupId={AD_IDS.banner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -340,7 +324,7 @@ function PresetPage() {
             {atPresetLimit && (
               <TouchableOpacity
                 style={[styles.slotAddBtn, !adLoaded && styles.slotAddBtnDisabled]}
-                onPress={() => { if (adLoaded) playAdThen(async () => { await increasePresetSlot(); Alert.alert('슬롯 추가!', '플랜을 1개 더 저장할 수 있어요.'); }); }}
+                onPress={() => { if (adLoaded) playAdThen(async () => { await increasePresetSlot(); Alert.alert('슬롯 추가!', '플랜을 1개 더 저장할 수 있어요.'); }, { title: '플랜 슬롯 추가', message: `현재 최대 ${maxPresets}개까지 저장할 수 있어요.\n짧은 광고를 보면 플랜을 1개 더 저장할 수 있어요.`, confirm: '광고 보고 추가' }); }}
                 disabled={!adLoaded}
                 activeOpacity={0.8}
               >
@@ -406,7 +390,7 @@ function PresetPage() {
       {/* 배너 광고 */}
       <View style={styles.banner}>
         <InlineAd
-          adGroupId="ait.v2.live.a0ee7a06ab474249"
+          adGroupId={AD_IDS.banner}
           theme="light"
           tone="grey"
           variant="expanded"
@@ -471,7 +455,7 @@ function PresetPage() {
               disabled={!saveName.trim()}
               activeOpacity={0.85}
             >
-              <Text style={styles.confirmBtnText}>{adLoaded ? '광고 보고 저장' : '저장하기'}</Text>
+              <Text style={styles.confirmBtnText}>{adLoaded ? '광고 보고 저장' : '광고 준비 중...'}</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -792,7 +776,7 @@ function PresetPage() {
                       await replacePills(preset.pills);
                       setShowPlanBuilder(false);
                       Alert.alert('적용 완료', `"${preset.name}" 플랜을 홈에 적용했어요.`);
-                    });
+                    }, { title: '홈에 적용하기', message: `짧은 광고를 보고 "${preset.name}" 플랜으로 홈을 바꿀 수 있어요.`, confirm: '광고 보고 적용' });
                   }}
                   activeOpacity={0.85}
                 >
@@ -808,7 +792,7 @@ function PresetPage() {
           {/* 배너 광고 */}
           <View style={styles.banner}>
             <InlineAd
-              adGroupId="ait.v2.live.a0ee7a06ab474249"
+              adGroupId={AD_IDS.banner}
               theme="light"
               tone="grey"
               variant="expanded"
@@ -822,169 +806,126 @@ function PresetPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F8FA' },
-  banner: { width: '100%', height: 96, overflow: 'hidden' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
-  },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  backText: { fontSize: 28, color: '#333', lineHeight: 34 },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111' },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 20 },
-  section: { marginBottom: 24 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
-  sectionDesc: { fontSize: 13, color: '#888', lineHeight: 19, marginBottom: 12 },
-
-  saveBtn: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  saveBtnDisabled: { backgroundColor: '#ccc' },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  saveHint: { fontSize: 12, color: '#F59E0B', marginTop: 8, textAlign: 'center' },
-
-  addNewBtn: { backgroundColor: PRIMARY_LIGHT, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
-  addNewBtnDisabled: { backgroundColor: '#F3F4F6' },
-  addNewBtnText: { fontSize: 13, fontWeight: '600', color: PRIMARY_DARK },
-  addNewBtnTextDisabled: { color: '#AAA' },
-
-  slotInfo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  slotInfoText: { fontSize: 12, color: '#9CA3AF' },
-  slotAddBtn: { backgroundColor: '#FFF7ED', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  slotAddBtnDisabled: { backgroundColor: '#F3F4F6' },
-  slotAddBtnText: { fontSize: 12, fontWeight: '600', color: '#F59E0B' },
-
-  emptyBox: { backgroundColor: '#fff', borderRadius: 14, paddingVertical: 28, alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
-  emptyText: { fontSize: 14, color: '#BBB', marginBottom: 4 },
-  emptySubText: { fontSize: 12, color: '#CCC' },
-
-  presetCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#EEE' },
-  presetCardTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
-  presetCardLeft: { flex: 1 },
-  presetName: { fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 3 },
-  presetMeta: { fontSize: 12, color: '#AAA' },
-  presetCardActions: { flexDirection: 'row', gap: 8 },
-  loadBtn: { backgroundColor: PRIMARY_LIGHT, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  loadBtnText: { fontSize: 13, fontWeight: '600', color: PRIMARY_DARK },
-  deleteBtn: { backgroundColor: '#FFF1F1', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  deleteBtnText: { fontSize: 13, fontWeight: '600', color: '#E53E3E' },
-
-  dayRow: { borderTopWidth: 1, borderTopColor: '#F5F5F5', paddingTop: 12 },
-  dayRowLabel: { fontSize: 12, color: '#999', marginBottom: 8 },
-  dayChips: { flexDirection: 'row', gap: 6 },
-  dayChip: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
-  dayChipActive: { backgroundColor: PRIMARY },
-  dayChipOther: { opacity: 0.35 },
-  dayChipText: { fontSize: 13, fontWeight: '600', color: '#555' },
-  dayChipTextActive: { color: '#fff' },
-
-  // 모달 공통
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
-  sheetOuter: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  bottomSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingBottom: Platform.OS === 'ios' ? 36 : 24, paddingTop: 12,
-  },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#DDD', alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 4 },
-  sheetDesc: { fontSize: 13, color: '#9CA3AF', marginBottom: 12 },
-  nameInput: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111', marginBottom: 16 },
-  confirmBtn: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  confirmBtnDisabled: { backgroundColor: '#ccc' },
-  confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-
-  // 플랜 빌더
-  builderContainer: { flex: 1, backgroundColor: '#F7F8FA' },
-  builderHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
-  },
-  builderTitle: { fontSize: 16, fontWeight: '700', color: '#111', flex: 1, textAlign: 'center' },
-  builderSaveBtn: { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
-  builderSaveBtnDisabled: { backgroundColor: '#ccc' },
-  builderSaveBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  builderContent: { paddingHorizontal: 16, paddingTop: 16 },
-  builderSlotRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  builderSlotText: { fontSize: 13, color: '#9CA3AF' },
-  builderEmpty: { backgroundColor: '#fff', borderRadius: 14, paddingVertical: 32, alignItems: 'center', borderWidth: 1, borderColor: '#EEE', marginBottom: 12 },
-  builderEmptyText: { fontSize: 14, color: '#BBB', marginBottom: 4 },
-  builderEmptySubText: { fontSize: 12, color: '#CCC' },
-  planPillGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
-  planGridCell: { width: GRID_CELL_WIDTH, paddingHorizontal: 4, paddingBottom: 8 },
-  planGridCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1.5,
-    borderColor: '#E5E7EB', paddingVertical: 12, paddingHorizontal: 8, alignItems: 'center',
-  },
-  planGridTime: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', marginBottom: 8 },
-  planGridEmojiWrap: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  planGridEmoji: { fontSize: 26 },
-  planGridName: { fontSize: 11, fontWeight: '600', color: '#111827', textAlign: 'center' },
-  planGridDosage: { fontSize: 10, color: '#9CA3AF', textAlign: 'center', marginTop: 2 },
-  planAddPillBtn: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
-  planAddPillBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  planAddPillBtnLocked: {
-    backgroundColor: '#F9FAFB', borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', marginTop: 4,
-  },
-  planAddPillBtnLockedText: { fontSize: 14, color: '#9CA3AF', fontWeight: '600' },
-  applyBtn: {
-    backgroundColor: '#EFF6FF', borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center', marginTop: 10, borderWidth: 1.5, borderColor: '#3B82F6',
-  },
-  applyBtnDisabled: { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' },
-  applyBtnText: { color: '#3B82F6', fontSize: 15, fontWeight: '700' },
-
-  // 영양제 추가 폼
-  addPillSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingBottom: Platform.OS === 'ios' ? 36 : 24, paddingTop: 12, maxHeight: '90%',
-  },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 12 },
-  optional: { fontSize: 12, fontWeight: '400', color: '#9CA3AF' },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
-  chipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  chipText: { fontSize: 13, color: '#374151', fontWeight: '500' },
-  chipTextSelected: { color: PRIMARY_DARK, fontWeight: '700' },
-  iconRow: { flexDirection: 'row', gap: 10 },
-  iconChip: { width: 52, height: 52, borderRadius: 14, borderWidth: 2, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center' },
-  iconEmoji: { fontSize: 26 },
-  dosageRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dosageInput: { width: 72, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 15, color: '#111' },
-  unitChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
-  unitChipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  unitChipText: { fontSize: 13, color: '#374151', fontWeight: '500' },
-  unitChipTextSelected: { color: PRIMARY_DARK, fontWeight: '700' },
-  timeChipWrap: { paddingBottom: 4, gap: 8 },
-  timeChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center' },
-  timeChipSel: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  timeChipDis: { opacity: 0.4 },
-  timeChipLabel: { fontSize: 11, color: '#6B7280', fontWeight: '500' },
-  timeChipLabelSel: { color: PRIMARY_DARK },
-  timeChipLabelDis: { color: '#9CA3AF' },
-  timeChipTime: { fontSize: 13, fontWeight: '700', color: '#111827', marginTop: 2 },
-  timeChipTimeSel: { color: PRIMARY_DARK },
-  customTimeRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  customTimeInput: { flex: 1, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, color: '#111' },
-  customTimeAddBtn: { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, justifyContent: 'center' },
-  customTimeAddBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-
-  // 도움말 버튼
-  helpBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  helpBtnText: { fontSize: 15, fontWeight: '700', color: '#6B7280' },
-
-  // 도움말 모달
-  helpOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  helpCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' },
-  helpTitle: { fontSize: 17, fontWeight: '800', color: '#111', marginBottom: 16, textAlign: 'center' },
-  helpSection: { marginBottom: 14 },
-  helpSectionTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 6 },
-  helpItem: { fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 2 },
-  helpClose: { backgroundColor: PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
-  helpCloseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  container: {flex: 1, backgroundColor: '#F7F8FA'},
+  banner: {width: '100%', height: 96, overflow: 'hidden'},
+  header: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0'},
+  backBtn: {width: 40, alignItems: 'flex-start'},
+  backText: {fontSize: 28, color: '#333', lineHeight: 34},
+  headerTitle: {fontSize: 17, fontWeight: '700', color: '#111'},
+  scrollContent: {paddingHorizontal: 16, paddingTop: 20},
+  section: {marginBottom: 24},
+  sectionHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6},
+  sectionTitle: {fontSize: 15, fontWeight: '700', color: '#111'},
+  sectionDesc: {fontSize: 13, color: '#888', lineHeight: 19, marginBottom: 12},
+  saveBtn: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 14, alignItems: 'center'},
+  saveBtnDisabled: {backgroundColor: '#ccc'},
+  saveBtnText: {color: '#fff', fontSize: 15, fontWeight: '700'},
+  saveHint: {fontSize: 12, color: '#F59E0B', marginTop: 8, textAlign: 'center'},
+  addNewBtn: {backgroundColor: '#DCFCE7', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6},
+  addNewBtnDisabled: {backgroundColor: '#F3F4F6'},
+  addNewBtnText: {fontSize: 13, fontWeight: '600', color: '#16A34A'},
+  addNewBtnTextDisabled: {color: '#AAA'},
+  slotInfo: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10},
+  slotInfoText: {fontSize: 12, color: '#9CA3AF'},
+  slotAddBtn: {backgroundColor: '#FFF7ED', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5},
+  slotAddBtnDisabled: {backgroundColor: '#F3F4F6'},
+  slotAddBtnText: {fontSize: 12, fontWeight: '600', color: '#F59E0B'},
+  emptyBox: {backgroundColor: '#fff', borderRadius: 14, paddingVertical: 28, alignItems: 'center', borderWidth: 1, borderColor: '#EEE'},
+  emptyText: {fontSize: 14, color: '#BBB', marginBottom: 4},
+  emptySubText: {fontSize: 12, color: '#CCC'},
+  presetCard: {backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#EEE'},
+  presetCardTop: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12},
+  presetCardLeft: {flex: 1},
+  presetName: {fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 3},
+  presetMeta: {fontSize: 12, color: '#AAA'},
+  presetCardActions: {flexDirection: 'row', gap: 8},
+  loadBtn: {backgroundColor: '#DCFCE7', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6},
+  loadBtnText: {fontSize: 13, fontWeight: '600', color: '#16A34A'},
+  deleteBtn: {backgroundColor: '#FFF1F1', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6},
+  deleteBtnText: {fontSize: 13, fontWeight: '600', color: '#E53E3E'},
+  dayRow: {borderTopWidth: 1, borderTopColor: '#F5F5F5', paddingTop: 12},
+  dayRowLabel: {fontSize: 12, color: '#999', marginBottom: 8},
+  dayChips: {flexDirection: 'row', gap: 6},
+  dayChip: {width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6'},
+  dayChipActive: {backgroundColor: '#22C55E'},
+  dayChipOther: {opacity: 0.35},
+  dayChipText: {fontSize: 13, fontWeight: '600', color: '#555'},
+  dayChipTextActive: {color: '#fff'},
+  modalOverlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.35)'},
+  sheetOuter: {flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)'},
+  bottomSheet: {backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 36, paddingTop: 12},
+  sheetHandle: {width: 36, height: 4, borderRadius: 2, backgroundColor: '#DDD', alignSelf: 'center', marginBottom: 16},
+  sheetTitle: {fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 4},
+  sheetDesc: {fontSize: 13, color: '#9CA3AF', marginBottom: 12},
+  nameInput: {borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111', marginBottom: 16},
+  confirmBtn: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 14, alignItems: 'center'},
+  confirmBtnDisabled: {backgroundColor: '#ccc'},
+  confirmBtnText: {color: '#fff', fontSize: 15, fontWeight: '700'},
+  builderContainer: {flex: 1, backgroundColor: '#F7F8FA'},
+  builderHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0'},
+  builderTitle: {fontSize: 16, fontWeight: '700', color: '#111', flex: 1, textAlign: 'center'},
+  builderSaveBtn: {backgroundColor: '#22C55E', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7},
+  builderSaveBtnDisabled: {backgroundColor: '#ccc'},
+  builderSaveBtnText: {color: '#fff', fontSize: 14, fontWeight: '700'},
+  builderContent: {paddingHorizontal: 16, paddingTop: 16},
+  builderSlotRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14},
+  builderSlotText: {fontSize: 13, color: '#9CA3AF'},
+  builderEmpty: {backgroundColor: '#fff', borderRadius: 14, paddingVertical: 32, alignItems: 'center', borderWidth: 1, borderColor: '#EEE', marginBottom: 12},
+  builderEmptyText: {fontSize: 14, color: '#BBB', marginBottom: 4},
+  builderEmptySubText: {fontSize: 12, color: '#CCC'},
+  planPillGrid: {flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8},
+  planGridCell: {width: GRID_CELL_WIDTH, paddingHorizontal: 4, paddingBottom: 8},
+  planGridCard: {backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 12, paddingHorizontal: 8, alignItems: 'center'},
+  planGridTime: {fontSize: 11, fontWeight: '700', color: '#9CA3AF', marginBottom: 8},
+  planGridEmojiWrap: {width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8},
+  planGridEmoji: {fontSize: 26},
+  planGridName: {fontSize: 11, fontWeight: '600', color: '#111827', textAlign: 'center'},
+  planGridDosage: {fontSize: 10, color: '#9CA3AF', textAlign: 'center', marginTop: 2},
+  planAddPillBtn: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4},
+  planAddPillBtnText: {color: '#fff', fontSize: 15, fontWeight: '700'},
+  planAddPillBtnLocked: {backgroundColor: '#F9FAFB', borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', marginTop: 4},
+  planAddPillBtnLockedText: {fontSize: 14, color: '#9CA3AF', fontWeight: '600'},
+  applyBtn: {backgroundColor: '#EFF6FF', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 10, borderWidth: 1.5, borderColor: '#3B82F6'},
+  applyBtnDisabled: {backgroundColor: '#F3F4F6', borderColor: '#E5E7EB'},
+  applyBtnText: {color: '#3B82F6', fontSize: 15, fontWeight: '700'},
+  addPillSheet: {backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 36, paddingTop: 12, maxHeight: '90%'},
+  fieldLabel: {fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 12},
+  optional: {fontSize: 12, fontWeight: '400', color: '#9CA3AF'},
+  chipWrap: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
+  chip: {paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB'},
+  chipSelected: {backgroundColor: '#DCFCE7', borderColor: '#22C55E'},
+  chipText: {fontSize: 13, color: '#374151', fontWeight: '500'},
+  chipTextSelected: {color: '#16A34A', fontWeight: '700'},
+  iconRow: {flexDirection: 'row', gap: 10},
+  iconChip: {width: 52, height: 52, borderRadius: 14, borderWidth: 2, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center'},
+  iconEmoji: {fontSize: 26},
+  dosageRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  dosageInput: {width: 72, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 15, color: '#111'},
+  unitChip: {paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB'},
+  unitChipSelected: {backgroundColor: '#DCFCE7', borderColor: '#22C55E'},
+  unitChipText: {fontSize: 13, color: '#374151', fontWeight: '500'},
+  unitChipTextSelected: {color: '#16A34A', fontWeight: '700'},
+  timeChipWrap: {paddingBottom: 4, gap: 8},
+  timeChip: {paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center'},
+  timeChipSel: {backgroundColor: '#DCFCE7', borderColor: '#22C55E'},
+  timeChipDis: {opacity: 0.4},
+  timeChipLabel: {fontSize: 11, color: '#6B7280', fontWeight: '500'},
+  timeChipLabelSel: {color: '#16A34A'},
+  timeChipLabelDis: {color: '#9CA3AF'},
+  timeChipTime: {fontSize: 13, fontWeight: '700', color: '#111827', marginTop: 2},
+  timeChipTimeSel: {color: '#16A34A'},
+  customTimeRow: {flexDirection: 'row', gap: 8, marginTop: 8},
+  customTimeInput: {flex: 1, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, color: '#111'},
+  customTimeAddBtn: {backgroundColor: '#22C55E', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, justifyContent: 'center'},
+  customTimeAddBtnText: {color: '#fff', fontWeight: '700', fontSize: 14},
+  helpBtn: {width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center'},
+  helpBtnText: {fontSize: 15, fontWeight: '700', color: '#6B7280'},
+  helpOverlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24},
+  helpCard: {backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%'},
+  helpTitle: {fontSize: 17, fontWeight: '800', color: '#111', marginBottom: 16, textAlign: 'center'},
+  helpSection: {marginBottom: 14},
+  helpSectionTitle: {fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 6},
+  helpItem: {fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 2},
+  helpClose: {backgroundColor: '#22C55E', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 8},
+  helpCloseText: {color: '#fff', fontSize: 15, fontWeight: '700'},
 });

@@ -1,6 +1,6 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd, loadFullScreenAd, showFullScreenAd } from '@apps-in-toss/framework';
-import React, { useEffect, useState } from 'react';
+import { InlineAd } from '@apps-in-toss/framework';
+import React, { useState } from 'react';
 import {
   Alert,
   Keyboard,
@@ -20,13 +20,14 @@ import { usePills } from '../stores/PillContext';
 import { Pill } from '../data/types';
 import { formatTime } from '../data/utils';
 import { PRESET_TIMES } from '../data/constants';
+import { AD_IDS } from '../src/ads';
+import { useRewardAd } from '../src/useRewardAd';
 
 export const Route = createRoute('/manage', { component: ManagePage });
 
 const PRIMARY = '#22C55E';
 const PRIMARY_DARK = '#16A34A';
 const PRIMARY_LIGHT = '#DCFCE7';
-const REWARD_AD_ID = 'ait.v2.live.7848babf27974479';
 
 const ICONS = [
   { emoji: '💊', color: '#22C55E' },
@@ -40,47 +41,19 @@ function ManagePage() {
   const navigation = Route.useNavigation();
   const { pills, maxSlots, increaseSlot, decreaseSlot, addPill, deletePill, updatePill } = usePills();
 
-  // --- Reward ad ---
-  const [adLoaded, setAdLoaded] = useState(false);
+  // --- Reward ad --- (자리 추가 창을 연 동안에만 불러온다)
   const [showSlotModal, setShowSlotModal] = useState(false);
-
-  useEffect(() => {
-    if (!loadFullScreenAd.isSupported()) return;
-    const unregister = loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (event) => { if (event.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-    return () => unregister();
-  }, []);
-
-  const loadNextAd = () => {
-    if (!loadFullScreenAd.isSupported()) return;
-    setAdLoaded(false);
-    loadFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: (event) => { if (event.type === 'loaded') setAdLoaded(true); },
-      onError: () => setAdLoaded(false),
-    });
-  };
+  const ad = useRewardAd(showSlotModal);
 
   const handleWatchAd = () => {
-    if (!showFullScreenAd.isSupported()) {
-      Alert.alert('지원되지 않는 환경이에요.');
-      return;
-    }
     setShowSlotModal(false);
-    showFullScreenAd({
-      options: { adGroupId: REWARD_AD_ID },
-      onEvent: async (event) => {
-        if (event.type === 'userEarnedReward') {
-          await increaseSlot();
-          Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
-        }
-        if (event.type === 'dismissed') loadNextAd();
+    ad.confirmAndPlay(
+      { title: '영양제 슬롯 추가', message: '짧은 광고를 보고 슬롯을 1개 더 추가할 수 있어요.', confirm: '광고 보고 슬롯 추가하기' },
+      async () => {
+        await increaseSlot();
+        Alert.alert('슬롯 추가 완료!', '영양제를 1개 더 등록할 수 있어요.');
       },
-      onError: () => Alert.alert('광고를 불러올 수 없어요. 잠시 후 다시 시도해주세요.'),
-    });
+    );
   };
 
   const usedSlots = pills.reduce((acc, p) => acc + p.times.length, 0);
@@ -281,6 +254,11 @@ function ManagePage() {
         title="영양제 관리"
       />
 
+      {/* 최상단 배너 (라이브와 동일) */}
+      <View style={styles.banner}>
+        <InlineAd adGroupId={AD_IDS.banner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
+      </View>
+
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {pills.length === 0 ? (
           <EmptyState onAdd={handleAddPress} />
@@ -305,7 +283,7 @@ function ManagePage() {
       {/* 배너 광고 */}
       <View style={styles.banner}>
         <InlineAd
-          adGroupId="ait.v2.live.a0ee7a06ab474249"
+          adGroupId={AD_IDS.banner}
           theme="light"
           tone="grey"
           variant="expanded"
@@ -332,13 +310,13 @@ function ManagePage() {
               짧은 광고를 시청하면 슬롯을 1개 더 추가할 수 있어요.
             </Text>
             <TouchableOpacity
-              style={[slotStyles.watchBtn, !adLoaded && slotStyles.watchBtnDisabled]}
+              style={[slotStyles.watchBtn, !ad.loaded && slotStyles.watchBtnDisabled]}
               onPress={handleWatchAd}
-              disabled={!adLoaded}
+              disabled={!ad.loaded}
               activeOpacity={0.85}
             >
               <Text style={slotStyles.watchBtnText}>
-                {adLoaded ? '광고 보고 슬롯 추가하기' : '광고 준비 중...'}
+                {ad.loaded ? '광고 보고 슬롯 추가하기' : '광고 준비 중...'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={slotStyles.cancelBtn} onPress={() => setShowSlotModal(false)} activeOpacity={0.7}>
@@ -741,19 +719,11 @@ function SimpleHeader({ title, onBack, rightLabel, onRight }: {
 }
 
 const headerStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    paddingHorizontal: 4,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  side: { width: 64, alignItems: 'center', justifyContent: 'center' },
-  back: { fontSize: 32, color: '#111827', lineHeight: 40 },
-  title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#111827' },
-  right: { fontSize: 14, fontWeight: '600', color: '#22C55E' },
+  container: {flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 4, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6'},
+  side: {width: 64, alignItems: 'center', justifyContent: 'center'},
+  back: {fontSize: 32, color: '#111827', lineHeight: 40},
+  title: {flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#111827'},
+  right: {fontSize: 14, fontWeight: '600', color: '#22C55E'},
 });
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
@@ -770,101 +740,86 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20 },
-  sectionHint: { fontSize: 13, color: '#6B7280', marginBottom: 12, fontWeight: '500' },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  cardMain: { flexDirection: 'row', alignItems: 'center', padding: 16 },
-  pillIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  pillEmoji: { fontSize: 24 },
-  pillInfo: { flex: 1 },
-  pillName: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 3 },
-  pillTime: { fontSize: 13, color: PRIMARY_DARK, fontWeight: '600' },
-  pillNote: { fontSize: 12, color: '#9CA3AF', marginTop: 3 },
-  colorDot: { width: 10, height: 10, borderRadius: 5 },
-  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  editBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  editBtnText: { fontSize: 14, fontWeight: '600', color: PRIMARY_DARK },
-  divider: { width: 1, backgroundColor: '#F3F4F6' },
-  deleteBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  deleteBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
-  banner: { width: '100%', height: 96, overflow: 'hidden' },
-  footer: { paddingHorizontal: 20, paddingBottom: 28, paddingTop: 12 },
-  addButton: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  addButtonText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  emptyState: { alignItems: 'center', paddingTop: 80 },
-  emptyEmoji: { fontSize: 52, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 8 },
-  emptyDesc: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  emptyButton: { backgroundColor: PRIMARY, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
-  emptyButtonText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  container: {flex: 1, backgroundColor: '#F9FAFB'},
+  scroll: {flex: 1},
+  scrollContent: {padding: 20},
+  sectionHint: {fontSize: 13, color: '#6B7280', marginBottom: 12, fontWeight: '500'},
+  card: {backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E7EB'},
+  cardMain: {flexDirection: 'row', alignItems: 'center', padding: 16},
+  pillIcon: {width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 14},
+  pillEmoji: {fontSize: 24},
+  pillInfo: {flex: 1},
+  pillName: {fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 3},
+  pillTime: {fontSize: 13, color: '#16A34A', fontWeight: '600'},
+  pillNote: {fontSize: 12, color: '#9CA3AF', marginTop: 3},
+  colorDot: {width: 10, height: 10, borderRadius: 5},
+  cardActions: {flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F3F4F6'},
+  editBtn: {flex: 1, paddingVertical: 12, alignItems: 'center'},
+  editBtnText: {fontSize: 14, fontWeight: '600', color: '#16A34A'},
+  divider: {width: 1, backgroundColor: '#F3F4F6'},
+  deleteBtn: {flex: 1, paddingVertical: 12, alignItems: 'center'},
+  deleteBtnText: {fontSize: 14, fontWeight: '600', color: '#EF4444'},
+  banner: {width: '100%', height: 96, overflow: 'hidden'},
+  footer: {paddingHorizontal: 20, paddingBottom: 28, paddingTop: 12},
+  addButton: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 16, alignItems: 'center'},
+  addButtonText: {fontSize: 16, fontWeight: '700', color: '#FFFFFF'},
+  emptyState: {alignItems: 'center', paddingTop: 80},
+  emptyEmoji: {fontSize: 52, marginBottom: 16},
+  emptyTitle: {fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 8},
+  emptyDesc: {fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 28},
+  emptyButton: {backgroundColor: '#22C55E', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14},
+  emptyButtonText: {fontSize: 15, fontWeight: '700', color: '#FFFFFF'},
 });
 
 const slotStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
-  card: { width: '85%', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, alignItems: 'center' },
-  emoji: { fontSize: 48, marginBottom: 12 },
-  title: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  desc: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  watchBtn: { width: '100%', backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 10 },
-  watchBtnDisabled: { backgroundColor: '#D1D5DB' },
-  watchBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-  cancelBtn: { width: '100%', paddingVertical: 12, alignItems: 'center' },
-  cancelBtnText: { fontSize: 14, color: '#9CA3AF', fontWeight: '500' },
+  overlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center'},
+  card: {width: '85%', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, alignItems: 'center'},
+  emoji: {fontSize: 48, marginBottom: 12},
+  title: {fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 10},
+  desc: {fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 24},
+  watchBtn: {width: '100%', backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 10},
+  watchBtnDisabled: {backgroundColor: '#D1D5DB'},
+  watchBtnText: {fontSize: 15, fontWeight: '700', color: '#FFFFFF'},
+  cancelBtn: {width: '100%', paddingVertical: 12, alignItems: 'center'},
+  cancelBtnText: {fontSize: 14, color: '#9CA3AF', fontWeight: '500'},
 });
 
 const editStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    paddingTop: 12,
-    maxHeight: '90%',
-  },
-  handle: { width: 40, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 20 },
-  label: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8, marginTop: 4 },
-  optional: { fontWeight: '400', color: '#9CA3AF' },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent' },
-  chipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  chipText: { fontSize: 13, fontWeight: '600', color: '#4B5563' },
-  chipTextSelected: { color: PRIMARY_DARK },
-  nameInput: { backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827', marginBottom: 4 },
-  iconRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  iconChip: { flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
-  iconEmoji: { fontSize: 24 },
-  dosageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  dosageInput: { width: 72, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#111827', textAlign: 'center' },
-  unitChip: { flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center' },
-  unitChipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  unitChipText: { fontSize: 13, fontWeight: '600', color: '#4B5563' },
-  unitChipTextSelected: { color: PRIMARY_DARK },
-  timeChipWrap: { flexDirection: 'row', gap: 8, paddingBottom: 20, paddingRight: 4 },
-  timeChip: { width: 76, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center' },
-  timeChipSelected: { backgroundColor: PRIMARY_LIGHT, borderColor: PRIMARY },
-  timeChipLabel: { fontSize: 12, fontWeight: '600', color: '#4B5563' },
-  timeChipLabelSelected: { color: PRIMARY_DARK },
-  timeChipTime: { fontSize: 11, color: '#9CA3AF' },
-  timeChipTimeSelected: { color: PRIMARY },
-  timeChipDisabled: { opacity: 0.4 },
-  timeChipDisabledText: { color: '#9CA3AF' },
-  customTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  customTimeInput: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827' },
-  customTimeAddBtn: { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
-  customTimeAddBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  saveBtn: { backgroundColor: PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
-  saveBtnDisabled: { backgroundColor: '#D1D5DB' },
-  saveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  overlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end'},
+  card: {backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12, maxHeight: '90%'},
+  handle: {width: 40, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginBottom: 16},
+  title: {fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 20},
+  label: {fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8, marginTop: 4},
+  optional: {fontWeight: '400', color: '#9CA3AF'},
+  chipWrap: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8},
+  chip: {paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent'},
+  chipSelected: {backgroundColor: '#DCFCE7', borderColor: '#22C55E'},
+  chipText: {fontSize: 13, fontWeight: '600', color: '#4B5563'},
+  chipTextSelected: {color: '#16A34A'},
+  nameInput: {backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827', marginBottom: 4},
+  iconRow: {flexDirection: 'row', gap: 10, marginBottom: 4},
+  iconChip: {flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center'},
+  iconEmoji: {fontSize: 24},
+  dosageRow: {flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4},
+  dosageInput: {width: 72, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#111827', textAlign: 'center'},
+  unitChip: {flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center'},
+  unitChipSelected: {backgroundColor: '#DCFCE7', borderColor: '#22C55E'},
+  unitChipText: {fontSize: 13, fontWeight: '600', color: '#4B5563'},
+  unitChipTextSelected: {color: '#16A34A'},
+  timeChipWrap: {flexDirection: 'row', gap: 8, paddingBottom: 20, paddingRight: 4},
+  timeChip: {width: 76, paddingVertical: 11, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: 'transparent', alignItems: 'center'},
+  timeChipSelected: {backgroundColor: '#DCFCE7', borderColor: '#22C55E'},
+  timeChipLabel: {fontSize: 12, fontWeight: '600', color: '#4B5563'},
+  timeChipLabelSelected: {color: '#16A34A'},
+  timeChipTime: {fontSize: 11, color: '#9CA3AF'},
+  timeChipTimeSelected: {color: '#22C55E'},
+  timeChipDisabled: {opacity: 0.4},
+  timeChipDisabledText: {color: '#9CA3AF'},
+  customTimeRow: {flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12},
+  customTimeInput: {flex: 1, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15, color: '#111827'},
+  customTimeAddBtn: {backgroundColor: '#22C55E', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11},
+  customTimeAddBtnText: {fontSize: 14, fontWeight: '700', color: '#FFFFFF'},
+  saveBtn: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 15, alignItems: 'center'},
+  saveBtnDisabled: {backgroundColor: '#D1D5DB'},
+  saveBtnText: {fontSize: 16, fontWeight: '700', color: '#FFFFFF'},
 });

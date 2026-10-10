@@ -18,6 +18,7 @@
   },
   "scripts": {
     "dev": "granite dev",
-    "build": "ait build"
+    "build": "ait build",
+    "verify": "esbuild scripts/verify-stamp.ts --bundle --platform=node --outfile=.verify.js --log-level=warning && node .verify.js"
   }
 }

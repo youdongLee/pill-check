@@ -1,7 +1,8 @@
 import { Storage } from '@apps-in-toss/framework';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { DailyRecord, Intake, Pill } from '../data/types';
-import { generateId, todayStr } from '../data/utils';
+import { generateId } from '../data/utils';
+import { currentDay, useDayKey } from '../src/useDayKey';
 
 const PILLS_KEY = '@pillcheck/pills';
 const RECORD_KEY = (date: string) => `@pillcheck/record_${date}`;
@@ -27,13 +28,13 @@ const PillContext = createContext<PillContextType | undefined>(undefined);
 
 export function PillProvider({ children }: { children: ReactNode }) {
   const [pills, setPills] = useState<Pill[]>([]);
-  const [todayRecord, setTodayRecord] = useState<DailyRecord>({ date: todayStr(), intakes: [] });
+  const [todayRecord, setTodayRecord] = useState<DailyRecord>({ date: currentDay(), intakes: [] });
   const [loading, setLoading] = useState(true);
   const [maxSlots, setMaxSlots] = useState(DEFAULT_MAX_SLOTS);
 
   const pillsRef = useRef<Pill[]>([]);
   const maxSlotsRef = useRef<number>(DEFAULT_MAX_SLOTS);
-  const todayRecordRef = useRef<DailyRecord>({ date: todayStr(), intakes: [] });
+  const todayRecordRef = useRef<DailyRecord>({ date: currentDay(), intakes: [] });
 
   useEffect(() => { pillsRef.current = pills; }, [pills]);
   useEffect(() => { maxSlotsRef.current = maxSlots; }, [maxSlots]);
@@ -56,7 +57,7 @@ export function PillProvider({ children }: { children: ReactNode }) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const today = todayStr();
+      const today = currentDay();
       const [pillsRaw, recordRaw, maxSlotsRaw] = await Promise.all([
         Storage.getItem(PILLS_KEY),
         Storage.getItem(RECORD_KEY(today)),
@@ -77,6 +78,24 @@ export function PillProvider({ children }: { children: ReactNode }) {
     loadAll();
   }, [loadAll]);
 
+  // 앱을 켜둔 채 자정을 넘기거나 다음 날 돌아오면 오늘 기록으로 바꿔 끼운다(어제 체크가 넘어오지 않게)
+  const day = useDayKey();
+  const freshRecord = async (): Promise<DailyRecord> => {
+    const cur = todayRecordRef.current;
+    const today = currentDay();
+    if (cur.date === today) return cur;
+    const raw = await Storage.getItem(RECORD_KEY(today));
+    const existing: Intake[] = raw ? (JSON.parse(raw) as DailyRecord).intakes : [];
+    const record = buildRecord(today, existing, pillsRef.current);
+    todayRecordRef.current = record;
+    setTodayRecord(record);
+    return record;
+  };
+  useEffect(() => {
+    if (!loading && todayRecordRef.current.date !== day) void freshRecord();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, loading]);
+
   const persistPills = async (next: Pill[]) => {
     await Storage.setItem(PILLS_KEY, JSON.stringify(next));
     setPills(next);
@@ -84,7 +103,10 @@ export function PillProvider({ children }: { children: ReactNode }) {
 
   const persistRecord = async (record: DailyRecord) => {
     await Storage.setItem(RECORD_KEY(record.date), JSON.stringify(record));
-    if (record.date === todayStr()) setTodayRecord(record);
+    if (record.date === currentDay()) {
+      todayRecordRef.current = record;
+      setTodayRecord(record);
+    }
   };
 
   const addPill = async (pill: Omit<Pill, 'id'>) => {
@@ -130,10 +152,11 @@ export function PillProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleIntake = async (pillId: string, time: string) => {
-    const intakes = todayRecord.intakes.map((i) =>
+    const base = await freshRecord();
+    const intakes = base.intakes.map((i) =>
       i.pillId === pillId && i.time === time ? { ...i, taken: !i.taken } : i
     );
-    await persistRecord({ ...todayRecord, intakes });
+    await persistRecord({ ...base, intakes });
   };
 
   const increaseSlot = async () => {
@@ -149,7 +172,7 @@ export function PillProvider({ children }: { children: ReactNode }) {
   };
 
   const replacePills = async (newPillDefs: Omit<Pill, 'id'>[]) => {
-    const today = todayStr();
+    const today = currentDay();
     const newPills: Pill[] = newPillDefs.map((p) => ({ ...p, id: generateId() }));
     const newIntakes = newPills.flatMap((pill) =>
       pill.times.map((time) => ({ pillId: pill.id, pillName: pill.name, time, taken: false }))

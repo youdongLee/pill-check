@@ -1,100 +1,157 @@
 import { Storage } from '@apps-in-toss/framework';
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { todayStr } from '../data/utils';
+import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import { DAILY_AMOUNT, PROMO, STREAK_AMOUNT } from '../src/ads';
+import { grantReward } from '../src/reward';
+import {
+  Change,
+  EMPTY_PAYOUT,
+  StampState,
+  StampView,
+  addDays,
+  earnDaily,
+  earnStreak,
+  markDailyPaid,
+  markStreakPaid,
+  normalize,
+  parseClaimedDate,
+  parsePayout,
+  parseStamps,
+  runClaim,
+  view,
+} from '../src/stampCore';
+import { currentDay, useDayKey } from '../src/useDayKey';
 
+// 라이브(20260423-23)와 같은 키 — 기존 유저의 도장·연속이 그대로 이어진다
 const STAMPS_KEY = '@pillcheck/stamps';
-const STREAK_MILESTONE_KEY = '@pillcheck/streakMilestone';
+const CLAIMED_DATE_KEY = '@pillcheck/claimedDate';
+// 이번 번들 신규 키 (도장 발급일·지급일)
+const PAYOUT_KEY = '@pillcheck/payout_v1';
 
-interface StampContextType {
-  stamps: string[];
-  todayStamped: boolean;
-  currentStreak: number;
-  canClaimStreakReward: boolean;
-  earnTodayStamp: () => Promise<void>;
-  claimStreakReward: () => Promise<void>;
-  seedPastStamps: (days: number) => Promise<void>; // dev only
-}
+type StampContextType = StampView & {
+  ready: boolean;
+  today: string;
+  paying: boolean;
+  /** 광고 끝까지 본 뒤 호출 → 오늘 도장 발급 */
+  earnDailyStamp: () => Promise<boolean>;
+  /** 광고 끝까지 본 뒤 호출 → 7일 연속 도장 발급 */
+  earnStreakStamp: () => Promise<boolean>;
+  /** 도장 누름 → 1원 지급 (기록 먼저, 실패해도 조용히) */
+  claimDaily: () => Promise<boolean>;
+  /** 도장 누름 → 10원 지급 */
+  claimStreak: () => Promise<boolean>;
+  // 테스트 패널 전용
+  devSeedPast: (days: number) => Promise<void>;
+  devReset: () => Promise<void>;
+  devState: () => StampState;
+};
 
 const StampContext = createContext<StampContextType | undefined>(undefined);
 
-function dateStr(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function calcStreak(stamps: string[]): number {
-  const stampSet = new Set(stamps);
-  let streak = 0;
-  const date = new Date();
-  // 오늘 미도장이면 어제부터 카운트 (연속 진행 중인 경우 표시)
-  if (!stampSet.has(dateStr(date))) {
-    date.setDate(date.getDate() - 1);
+async function persist(prev: StampState, next: StampState) {
+  const jobs: Promise<unknown>[] = [];
+  if (prev.stamps !== next.stamps) jobs.push(Storage.setItem(STAMPS_KEY, JSON.stringify(next.stamps)));
+  if (prev.claimedDate !== next.claimedDate && next.claimedDate) {
+    // 라이브와 같이 따옴표 없는 원문으로 저장
+    jobs.push(Storage.setItem(CLAIMED_DATE_KEY, next.claimedDate));
   }
-  while (true) {
-    if (stampSet.has(dateStr(date))) {
-      streak++;
-      date.setDate(date.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-  return streak;
+  if (prev.payout !== next.payout) jobs.push(Storage.setItem(PAYOUT_KEY, JSON.stringify(next.payout)));
+  await Promise.all(jobs);
 }
 
 export function StampProvider({ children }: { children: ReactNode }) {
-  const [stamps, setStamps] = useState<string[]>([]);
-  const [streakMilestone, setStreakMilestone] = useState(0);
+  const today = useDayKey();
+  const [state, setState] = useState<StampState>({ stamps: [], claimedDate: null, payout: { ...EMPTY_PAYOUT } });
+  const [ready, setReady] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const stateRef = useRef(state);
+  const payingRef = useRef({ busy: false });
 
   useEffect(() => {
     (async () => {
-      const [stampsRaw, milestoneRaw] = await Promise.all([
+      const [stampsRaw, claimedRaw, payoutRaw] = await Promise.all([
         Storage.getItem(STAMPS_KEY),
-        Storage.getItem(STREAK_MILESTONE_KEY),
+        Storage.getItem(CLAIMED_DATE_KEY),
+        Storage.getItem(PAYOUT_KEY),
       ]);
-      if (stampsRaw) setStamps(JSON.parse(stampsRaw));
-      if (milestoneRaw) setStreakMilestone(JSON.parse(milestoneRaw));
+      const loaded: StampState = {
+        stamps: parseStamps(stampsRaw),
+        claimedDate: parseClaimedDate(claimedRaw),
+        payout: parsePayout(payoutRaw),
+      };
+      const norm = normalize(loaded, currentDay());
+      stateRef.current = norm;
+      setState(norm);
+      setReady(true);
+      if (norm !== loaded) await persist(loaded, norm);
     })();
   }, []);
 
-  const today = todayStr();
-  const todayStamped = stamps.includes(today);
-  const currentStreak = calcStreak(stamps);
-  // 새로운 7일 배수에 도달했고 오늘 도장을 받은 경우 리워드 클레임 가능
-  const canClaimStreakReward =
-    todayStamped && currentStreak >= 7 && Math.floor(currentStreak / 7) > streakMilestone;
-
-  const earnTodayStamp = async () => {
-    if (todayStamped) return;
-    const next = [...stamps, today];
-    await Storage.setItem(STAMPS_KEY, JSON.stringify(next));
-    setStamps(next);
-  };
-
-  const claimStreakReward = async () => {
-    const next = Math.floor(currentStreak / 7);
-    await Storage.setItem(STREAK_MILESTONE_KEY, JSON.stringify(next));
-    setStreakMilestone(next);
-  };
-
-  // dev only: 오늘 제외한 과거 N일치 도장을 심어줌
-  const seedPastStamps = async (days: number) => {
-    const result: string[] = [];
-    for (let i = days; i >= 1; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      result.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  // 날짜가 바뀌면(자정·복귀) 정리 규칙을 다시 적용해 저장
+  useEffect(() => {
+    if (!ready) return;
+    const cur = stateRef.current;
+    const norm = normalize(cur, today);
+    if (norm !== cur) {
+      stateRef.current = norm;
+      setState(norm);
+      void persist(cur, norm);
     }
-    const next = [...new Set([...stamps, ...result])];
-    await Storage.setItem(STAMPS_KEY, JSON.stringify(next));
-    setStamps(next);
+  }, [today, ready]);
+
+  /** 모든 변경은 여기로: 최신 상태(ref) → 롤오버 포함 순수 함수 → 저장 */
+  const apply = async (fn: (s: StampState, day: string) => Change): Promise<boolean> => {
+    const prev = stateRef.current;
+    const { state: next, ok } = fn(prev, currentDay());
+    if (next !== prev) {
+      stateRef.current = next;
+      setState(next);
+      await persist(prev, next);
+    }
+    return ok;
   };
 
-  return (
-    <StampContext.Provider
-      value={{ stamps, todayStamped, currentStreak, canClaimStreakReward, earnTodayStamp, claimStreakReward, seedPastStamps }}
-    >
-      {children}
-    </StampContext.Provider>
-  );
+  const claim = async (mark: typeof markDailyPaid, code: string, amount: number) => {
+    if (payingRef.current.busy) return false;
+    setPaying(true);
+    try {
+      // 잠금 → 지급 기록 먼저 → 지급 호출 (실패해도 화면 안내 없음, 재시도 없음)
+      return await runClaim(payingRef.current, () => apply(mark), async () => (await grantReward(code, amount)).ok);
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  const v = view(state, today);
+
+  const value: StampContextType = {
+    ...v,
+    ready,
+    today,
+    paying,
+    earnDailyStamp: () => apply(earnDaily),
+    earnStreakStamp: () => apply(earnStreak),
+    claimDaily: () => claim(markDailyPaid, PROMO.daily, DAILY_AMOUNT),
+    claimStreak: () => claim(markStreakPaid, PROMO.streak, STREAK_AMOUNT),
+    devSeedPast: async (days: number) => {
+      const day = currentDay();
+      const past: string[] = [];
+      for (let i = days; i >= 1; i--) past.push(addDays(day, -i));
+      await apply((s) => ({ ok: true, state: { ...s, stamps: [...new Set([...past, ...s.stamps])].sort() } }));
+    },
+    devReset: async () => {
+      await Promise.all([
+        Storage.setItem(STAMPS_KEY, '[]'),
+        Storage.setItem(CLAIMED_DATE_KEY, ''),
+        Storage.setItem(PAYOUT_KEY, JSON.stringify(EMPTY_PAYOUT)),
+      ]);
+      const next = { stamps: [], claimedDate: null, payout: { ...EMPTY_PAYOUT } };
+      stateRef.current = next;
+      setState(next);
+    },
+    devState: () => stateRef.current,
+  };
+
+  return <StampContext.Provider value={value}>{children}</StampContext.Provider>;
 }
 
 export function useStamps() {
