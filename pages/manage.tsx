@@ -1,5 +1,4 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd } from '@apps-in-toss/framework';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -22,6 +21,7 @@ import { formatTime } from '../data/utils';
 import { PRESET_TIMES } from '../data/constants';
 import { AD_IDS } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
+import { ImageAd, TopBanner } from '../src/AdSlot';
 
 export const Route = createRoute('/manage', { component: ManagePage });
 
@@ -254,50 +254,39 @@ function ManagePage() {
         title="영양제 관리"
       />
 
-      {/* 최상단 배너 (라이브와 동일) */}
-      <View style={styles.banner}>
-        <InlineAd adGroupId={AD_IDS.banner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
-      </View>
-
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {pills.length === 0 ? (
-          <EmptyState onAdd={handleAddPress} />
-        ) : (
-          <>
-            <Text style={styles.sectionHint}>
-              {usedSlots} / {maxSlots} 슬롯 사용 중
-            </Text>
-            {timeSlotItems.map(({ pill, time }) => (
-              <TimeSlotCard
-                key={`${pill.id}-${time}`}
-                pill={pill}
-                time={time}
-                onEdit={() => openEdit(pill, time)}
-                onDelete={() => handleDelete(pill, time)}
-              />
-            ))}
-          </>
-        )}
-      </ScrollView>
-
-      {/* 배너 광고 */}
-      <View style={styles.banner}>
-        <InlineAd
-          adGroupId={AD_IDS.banner}
-          theme="light"
-          tone="grey"
-          variant="expanded"
-          impressFallbackOnMount={true}
-        />
-      </View>
-
-      {pills.length > 0 && (
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddPress} activeOpacity={0.85}>
-            <Text style={styles.addButtonText}>+ 영양제 추가</Text>
-          </TouchableOpacity>
+      {/* 한 장 스크롤: 맨 위 줄배너 → 목록 → 추가 버튼 → 안내 글 → 이미지 광고 (아래 고정 배너 없음) */}
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <TopBanner position="manage_top" />
+        <View style={styles.scrollContent}>
+          {pills.length === 0 ? (
+            <EmptyState onAdd={handleAddPress} />
+          ) : (
+            <>
+              <Text style={styles.sectionHint}>
+                {usedSlots} / {maxSlots} 슬롯 사용 중
+              </Text>
+              {timeSlotItems.map(({ pill, time }) => (
+                <TimeSlotCard
+                  key={`${pill.id}-${time}`}
+                  pill={pill}
+                  time={time}
+                  onEdit={() => openEdit(pill, time)}
+                  onDelete={() => handleDelete(pill, time)}
+                />
+              ))}
+              <TouchableOpacity style={[styles.addButton, { marginTop: 8 }]} onPress={handleAddPress} activeOpacity={0.85}>
+                <Text style={styles.addButtonText}>+ 영양제 추가</Text>
+              </TouchableOpacity>
+              <Text style={[styles.sectionHint, { marginTop: 14, marginBottom: 0, textAlign: 'center' }]}>
+                카드를 누르면 이름·시간을 고칠 수 있어요
+              </Text>
+            </>
+          )}
         </View>
-      )}
+        {/* 이미지 광고 — 목록이 있을 때만, 목록·버튼 다음 안내 글 뒤(버튼과 떨어진 자리) */}
+        {pills.length > 0 && <ImageAd adGroupId={AD_IDS.manageImage} position="manage_after_list" />}
+        <View style={{ height: 24 }} />
+      </ScrollView>
 
       {/* 슬롯 부족 모달 */}
       <Modal visible={showSlotModal} transparent animationType="fade" onRequestClose={() => setShowSlotModal(false)}>

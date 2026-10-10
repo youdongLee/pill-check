@@ -1,5 +1,4 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd } from '@apps-in-toss/framework';
 import React, { useRef, useState } from 'react';
 import {
   Alert,
@@ -23,6 +22,7 @@ import { Pill } from '../data/types';
 import { PRESET_TIMES } from '../data/constants';
 import { AD_IDS } from '../src/ads';
 import { AdGuide, useRewardAd } from '../src/useRewardAd';
+import { ImageAd, TopBanner } from '../src/AdSlot';
 
 export const Route = createRoute('/preset', { component: PresetPage });
 
@@ -278,12 +278,10 @@ function PresetPage() {
         </TouchableOpacity>
       </View>
 
-      {/* 최상단 배너 (라이브와 동일) */}
-      <View style={styles.banner}>
-        <InlineAd adGroupId={AD_IDS.banner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {/* 한 장 스크롤: 맨 위 줄배너 → 저장 → 저장된 플랜 → 안내 글 → 이미지 광고 (아래 고정 배너 없음) */}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <TopBanner position="preset_top" />
+        <View style={styles.scrollContent}>
 
         {/* 현재 플랜 저장 */}
         <View style={styles.section}>
@@ -384,19 +382,16 @@ function PresetPage() {
             ))
           )}
         </View>
+        {presets.length > 0 && (
+          <Text style={[styles.sectionDesc, { textAlign: 'center', marginBottom: 0 }]}>
+            {'플랜 보기 → 홈에 적용하기로 언제든 바꿀 수 있어요'}
+          </Text>
+        )}
+        </View>
+        {/* 이미지 광고 — 저장된 플랜이 있을 때만, 목록 뒤 안내 글 다음(요일 버튼과 떨어진 자리) */}
+        {presets.length > 0 && <ImageAd adGroupId={AD_IDS.presetImage} position="preset_after_list" />}
         <View style={{ height: 32 }} />
       </ScrollView>
-
-      {/* 배너 광고 */}
-      <View style={styles.banner}>
-        <InlineAd
-          adGroupId={AD_IDS.banner}
-          theme="light"
-          tone="grey"
-          variant="expanded"
-          impressFallbackOnMount={true}
-        />
-      </View>
 
       {/* ── 도움말 모달 ── */}
       <Modal visible={showHelp} transparent animationType="fade" onRequestClose={() => setShowHelp(false)}>
@@ -690,7 +685,9 @@ function PresetPage() {
             </KeyboardAvoidingView>
           ) : (
             /* ── 영양제 목록 뷰 ── */
-            <ScrollView contentContainerStyle={styles.builderContent} showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <TopBanner position="preset_builder_top" />
+              <View style={styles.builderContent}>
               {/* 슬롯 현황 */}
               <View style={styles.builderSlotRow}>
                 <Text style={styles.builderSlotText}>슬롯 {planUsedSlots}/{planMaxSlots} 사용 중</Text>
@@ -786,19 +783,11 @@ function PresetPage() {
                 </TouchableOpacity>
               )}
               <View style={{ height: 24 }} />
+              </View>
             </ScrollView>
           )}
 
-          {/* 배너 광고 */}
-          <View style={styles.banner}>
-            <InlineAd
-              adGroupId={AD_IDS.banner}
-              theme="light"
-              tone="grey"
-              variant="expanded"
-              impressFallbackOnMount={true}
-            />
-          </View>
+
         </SafeAreaView>
       </Modal>
     </SafeAreaView>

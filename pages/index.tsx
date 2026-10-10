@@ -1,5 +1,4 @@
 import { createRoute } from '@granite-js/react-native';
-import { InlineAd } from '@apps-in-toss/framework';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,6 +24,7 @@ import { PRESET_TIMES } from '../data/constants';
 import { formatKoreanDate } from '../data/utils';
 import { AD_IDS, DAILY_AMOUNT, STREAK_AMOUNT } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
+import { ImageAd, TopBanner } from '../src/AdSlot';
 import { DevPanel } from '../src/DevPanel';
 import { SHOW_DEV_PANEL } from '../src/devFlags';
 
@@ -207,10 +207,9 @@ function HomePage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 최상단 배너 (라이브와 동일) */}
-      <View style={styles.banner}>
-        <InlineAd adGroupId={AD_IDS.banner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
-      </View>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
+      {/* 맨 위 줄배너 — 고정이 아니라 스크롤 첫 줄 */}
+      <TopBanner position="home_top" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -354,6 +353,15 @@ function HomePage() {
 
       </View>
 
+      {/* 이미지 광고 ① — 오늘 도장·지급이 다 끝난 뒤에만, 도장 카드 바로 아래(시선이 끝나는 곳).
+          위는 카드의 '오늘 도장 완료' 글, 아래는 목록 제목 글이라 버튼과 붙지 않는다. */}
+      {allPaidToday && sortedIntakes.length > 0 && (
+        <ImageAd adGroupId={AD_IDS.homeAfterStamp} position="home_after_stamp" />
+      )}
+
+      {/* 오늘 챙길 영양제 */}
+      <Text style={styles.sectionTitle}>오늘 챙길 영양제</Text>
+
       {/* 영양제 추가 버튼 */}
       {!atSlotLimit ? (
         <TouchableOpacity style={styles.addPillBtn} onPress={openQuickAdd} activeOpacity={0.85}>
@@ -368,18 +376,12 @@ function HomePage() {
       )}
 
       {/* 복약 체크 리스트 */}
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* 오늘 도장·지급까지 다 끝난 뒤에만 보이는 이미지 광고 (체크하는 동안은 목록을 밀어내지 않는다) */}
-        {allPaidToday && sortedIntakes.length > 0 && (
-          <View style={styles.imageAdWrap}>
-            <InlineAd adGroupId={AD_IDS.homeDoneImage} theme="light" tone="grey" variant="card" impressFallbackOnMount={true} />
-          </View>
-        )}
+      <View style={styles.listWrap}>
         {sortedIntakes.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>💊</Text>
             <Text style={styles.emptyTitle}>등록된 영양제가 없어요</Text>
-            <Text style={styles.emptyDesc}>아래 버튼으로{'\n'}영양제를 추가해보세요</Text>
+            <Text style={styles.emptyDesc}>위 버튼으로{'\n'}영양제를 추가해보세요</Text>
           </View>
         ) : (
           <View style={styles.pillGrid}>
@@ -397,23 +399,25 @@ function HomePage() {
             })}
           </View>
         )}
-        {/* 복용 목록 아래 이미지 광고 */}
-        <View style={styles.imageAdWrap}>
-          <InlineAd adGroupId={AD_IDS.homeImage} theme="light" tone="grey" variant="card" impressFallbackOnMount={true} />
-        </View>
-        {SHOW_DEV_PANEL && <DevPanel />}
-        <View style={{ height: 16 }} />
-      </ScrollView>
-
-      {/* 배너 광고 */}
-      <View style={styles.banner}>
-        <InlineAd adGroupId={AD_IDS.banner} theme="light" tone="grey" variant="expanded" impressFallbackOnMount={true} />
       </View>
 
+      {sortedIntakes.length > 0 && (
+        <>
+          <Text style={styles.listCaption}>{`드신 영양제를 누르면 체크돼요 · 슬롯 ${usedSlots}/${maxSlots}`}</Text>
+          {/* 이미지 광고 ② — 목록과 '영양제 관리' 사이(한 번 스크롤이면 닿는 곳). 앞뒤는 글이라 버튼과 떨어져 있다. */}
+          <ImageAd adGroupId={AD_IDS.homeMid} position="home_mid" />
+        </>
+      )}
+
       {/* 영양제 관리 */}
+      <Text style={styles.sectionTitle}>영양제 관리</Text>
       <TouchableOpacity style={styles.manageButton} onPress={() => navigation.navigate('/manage')} activeOpacity={0.85}>
         <Text style={styles.manageButtonText}>영양제 관리 (수정/삭제)</Text>
       </TouchableOpacity>
+
+      {SHOW_DEV_PANEL && <View style={styles.listWrap}><DevPanel /></View>}
+      <View style={{ height: 24 }} />
+      </ScrollView>
 
 {/* 슬롯 부족 모달 */}
       <Modal visible={showSlotModal} transparent animationType="fade" onRequestClose={() => setShowSlotModal(false)}>
@@ -721,8 +725,11 @@ const styles = StyleSheet.create({
   streakActionBtn: {backgroundColor: '#F59E0B', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 8},
   streakActionBtnText: {fontSize: 14, fontWeight: '700', color: '#FFFFFF'},
   banner: {width: '100%', height: 96, overflow: 'hidden'},
-  // 이미지(피드형) 광고는 세로가 길어 높이를 고정하지 않는다
-  imageAdWrap: {width: '100%', marginTop: 4, marginBottom: 8},
+  // 한 장 스크롤 레이아웃 (2026-10-10)
+  pageContent: {paddingBottom: 8},
+  listWrap: {paddingHorizontal: 16, paddingTop: 6},
+  sectionTitle: {fontSize: 15, fontWeight: '700', color: '#111827', marginHorizontal: 20, marginTop: 14, marginBottom: 8},
+  listCaption: {fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 2, marginHorizontal: 20},
   manageButton: {marginHorizontal: 20, marginBottom: 16, marginTop: 8, paddingVertical: 13, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center'},
   manageButtonText: {fontSize: 14, fontWeight: '600', color: '#6B7280'},
   modalOverlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end'},
