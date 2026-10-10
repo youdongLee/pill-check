@@ -203,7 +203,9 @@ function HomePage() {
   // 오늘 도장 버튼: 복용 체크를 다 했고 오늘 도장이 없을 때. 광고를 못 띄우는 환경이면 숨긴다(광고 없이 지급 없음).
   const showDailyAdBtn = allDone && !todayStamped && ad.supported;
   const showStreakAdBtn = canEarnStreak && !dailyPending && ad.supported;
-  const dayName = DAY_NAMES[new Date(today.replace(/-/g, '/')).getDay()];
+  // Hermes 는 'YYYY/MM/DD' 문자열을 못 읽는다(Invalid Date → undefined). 숫자로 나눠 만든다.
+  const [ty, tm, td] = today.split('-').map(Number);
+  const dayName = DAY_NAMES[new Date(ty, tm - 1, td).getDay()] ?? '오늘';
 
   // 도장 버튼 줄 — 지금 할 수 있는 것 하나만. 다 받았으면 줄 자체가 없다.
   const stampAction: { label: string; onPress: () => void; disabled: boolean; gold: boolean } | null =

@@ -22,8 +22,9 @@ const LIVE_PROMO = {
   streak: '01KNMBMT7JJR0HVRMS2Q44MW9V',
 } as const;
 
+// TEST_ 코드는 시작 전(SCHEDULED) 프로모션에만 통한다. 8133 은 이미 RUNNING 이라 그대로 둔다.
 export const PROMO = TEST_PROMO
-  ? { daily: `TEST_${LIVE_PROMO.daily}`, streak: `TEST_${LIVE_PROMO.streak}` }
+  ? { daily: `TEST_${LIVE_PROMO.daily}`, streak: LIVE_PROMO.streak }
   : LIVE_PROMO;
 
 export const DAILY_AMOUNT = 1;
