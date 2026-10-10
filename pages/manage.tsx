@@ -22,6 +22,7 @@ import { PRESET_TIMES } from '../data/constants';
 import { AD_IDS } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
 import { ImageAd, TopBanner } from '../src/AdSlot';
+import { AddTile, KEY_MAX, PillTile } from '../src/PillTile';
 
 export const Route = createRoute('/manage', { component: ManagePage });
 
@@ -257,33 +258,25 @@ function ManagePage() {
       {/* 한 장 스크롤: 맨 위 줄배너 → 목록 → 추가 버튼 → 안내 글 → 이미지 광고 (아래 고정 배너 없음) */}
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <TopBanner position="manage_top" />
-        <View style={styles.scrollContent}>
-          {pills.length === 0 ? (
-            <EmptyState onAdd={handleAddPress} />
-          ) : (
-            <>
-              <Text style={styles.sectionHint}>
-                {usedSlots} / {maxSlots} 슬롯 사용 중
-              </Text>
-              {timeSlotItems.map(({ pill, time }) => (
-                <TimeSlotCard
-                  key={`${pill.id}-${time}`}
-                  pill={pill}
-                  time={time}
-                  onEdit={() => openEdit(pill, time)}
-                  onDelete={() => handleDelete(pill, time)}
-                />
-              ))}
-              <TouchableOpacity style={[styles.addButton, { marginTop: 8 }]} onPress={handleAddPress} activeOpacity={0.85}>
-                <Text style={styles.addButtonText}>+ 영양제 추가</Text>
-              </TouchableOpacity>
-              <Text style={[styles.sectionHint, { marginTop: 14, marginBottom: 0, textAlign: 'center' }]}>
-                카드를 누르면 이름·시간을 고칠 수 있어요
-              </Text>
-            </>
+        {/* 홈과 같은 3열 타일: 누르면 수정(삭제는 수정 창 안), 마지막 칸 '+ 추가' */}
+        <View style={styles.tileWrap}>
+          {pills.length === 0 && (
+            <Text style={styles.emptyLine} maxFontSizeMultiplier={KEY_MAX}>📋 복용 중인 영양제를 추가해보세요</Text>
           )}
+          <View style={styles.tileGrid}>
+            {timeSlotItems.map(({ pill, time }) => (
+              <PillTile
+                key={`${pill.id}-${time}`}
+                pill={pill}
+                time={time}
+                onPress={() => openEdit(pill, time)}
+                onLongPress={() => handleDelete(pill, time)}
+              />
+            ))}
+            <AddTile used={usedSlots} max={maxSlots} onPress={handleAddPress} />
+          </View>
         </View>
-        {/* 이미지 광고 — 목록이 있을 때만, 목록·버튼 다음 안내 글 뒤(버튼과 떨어진 자리) */}
+        {/* 이미지 광고 — 타일 바로 아래(첫 화면 안), 영양제 1개 이상일 때만 */}
         {pills.length > 0 && <ImageAd adGroupId={AD_IDS.manageImage} position="manage_after_list" />}
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -642,6 +635,15 @@ function ManagePage() {
                     >
                       <Text style={editStyles.saveBtnText}>{saving ? '저장 중...' : '저장'}</Text>
                     </TouchableOpacity>
+                    {editingPill && (
+                      <TouchableOpacity
+                        style={styles.sheetDelete}
+                        onPress={() => { const p = editingPill; const t = editingTime; closeEdit(); handleDelete(p, t); }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.sheetDeleteText}>이 시간 삭제하기</Text>
+                      </TouchableOpacity>
+                    )}
                     <View style={{ height: 8 }} />
                   </ScrollView>
                 </View>
@@ -732,6 +734,12 @@ const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#F9FAFB'},
   scroll: {flex: 1},
   scrollContent: {padding: 20},
+  // 3차(10/10): 3열 타일
+  tileWrap: {paddingHorizontal: 12, paddingTop: 12},
+  tileGrid: {flexDirection: 'row', flexWrap: 'wrap'},
+  emptyLine: {fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 8},
+  sheetDelete: {alignItems: 'center', paddingVertical: 14, marginTop: 4},
+  sheetDeleteText: {fontSize: 14, fontWeight: '600', color: '#EF4444'},
   sectionHint: {fontSize: 13, color: '#6B7280', marginBottom: 12, fontWeight: '500'},
   card: {backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E7EB'},
   cardMain: {flexDirection: 'row', alignItems: 'center', padding: 16},

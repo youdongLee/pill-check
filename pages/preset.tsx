@@ -284,28 +284,30 @@ function PresetPage() {
         <View style={styles.scrollContent}>
 
         {/* 현재 플랜 저장 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>현재 플랜 저장</Text>
-          <Text style={styles.sectionDesc}>
-            지금 홈 화면에 설정된 복약 플랜 전체를 저장해요.{'\n'}저장된 플랜은 언제든 불러와서 적용할 수 있어요.
-          </Text>
+        <View style={[styles.section, styles.saveRow]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>현재 플랜 저장</Text>
+            <Text style={[styles.sectionDesc, { marginBottom: 0 }]} maxFontSizeMultiplier={1.3} numberOfLines={1}>홈 구성 그대로 저장</Text>
+          </View>
           <TouchableOpacity
-            style={[styles.saveBtn, (pills.length === 0 || saving) && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, styles.saveBtnCompact, (pills.length === 0 || saving) && styles.saveBtnDisabled]}
             onPress={handleOpenSaveModal}
             activeOpacity={0.85}
             disabled={saving}
           >
-            <Text style={styles.saveBtnText}>{saving ? '저장 중...' : '📋 현재 플랜 저장하기'}</Text>
+            <Text style={styles.saveBtnText}>{saving ? '저장 중...' : '📋 저장하기'}</Text>
           </TouchableOpacity>
           {pills.length === 0 && (
-            <Text style={styles.saveHint}>홈 화면에서 영양제를 먼저 추가해주세요</Text>
+            <Text style={[styles.saveHint, { position: 'absolute', left: 0, right: 0, bottom: -16 }]}>홈 화면에서 영양제를 먼저 추가해주세요</Text>
           )}
         </View>
 
         {/* 저장된 플랜 목록 */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>저장된 플랜</Text>
+            <Text style={styles.sectionTitle}>
+              저장된 플랜 <Text style={styles.slotInfoText} maxFontSizeMultiplier={1.3}>{presets.length}/{maxPresets}</Text>
+            </Text>
             <TouchableOpacity
               style={[styles.addNewBtn, atPresetLimit && styles.addNewBtnDisabled]}
               onPress={handleAddNewPlan}
@@ -317,8 +319,9 @@ function PresetPage() {
             </TouchableOpacity>
           </View>
 
+          {atPresetLimit && (
           <View style={styles.slotInfo}>
-            <Text style={styles.slotInfoText}>플랜 슬롯 {presets.length}/{maxPresets}</Text>
+            <Text style={styles.slotInfoText}>플랜 슬롯이 꽉 찼어요</Text>
             {atPresetLimit && (
               <TouchableOpacity
                 style={[styles.slotAddBtn, !adLoaded && styles.slotAddBtnDisabled]}
@@ -330,6 +333,7 @@ function PresetPage() {
               </TouchableOpacity>
             )}
           </View>
+          )}
 
           {presets.length === 0 ? (
             <View style={styles.emptyBox}>
@@ -342,7 +346,7 @@ function PresetPage() {
                 <View style={styles.presetCardTop}>
                   <View style={styles.presetCardLeft}>
                     <Text style={styles.presetName}>{preset.name}</Text>
-                    <Text style={styles.presetMeta}>영양제 {preset.pills.length}개 · {preset.savedAt} 저장</Text>
+                    <Text style={styles.presetMeta} maxFontSizeMultiplier={1.3} numberOfLines={1}>영양제 {preset.pills.length}개 · {preset.savedAt.slice(5).replace('-', '/')}</Text>
                   </View>
                   <View style={styles.presetCardActions}>
                     <TouchableOpacity
@@ -359,8 +363,8 @@ function PresetPage() {
                 </View>
 
                 {/* 요일 배정 */}
-                <View style={styles.dayRow}>
-                  <Text style={styles.dayRowLabel}>자동 적용 요일 (요일 선택 시 광고 시청 필요)</Text>
+                <View style={[styles.dayRow, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                  <Text style={[styles.dayRowLabel, { marginBottom: 0 }]} maxFontSizeMultiplier={1.3}>요일</Text>
                   <View style={styles.dayChips}>
                     {DAYS.map(({ label, day }) => {
                       const assigned = daySchedule[day] === preset.id;
@@ -372,7 +376,7 @@ function PresetPage() {
                           onPress={() => handleToggleDay(day, preset.id)}
                           activeOpacity={0.75}
                         >
-                          <Text style={[styles.dayChipText, assigned && styles.dayChipTextActive]}>{label}</Text>
+                          <Text style={[styles.dayChipText, assigned && styles.dayChipTextActive]} maxFontSizeMultiplier={1.3}>{label}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -383,8 +387,8 @@ function PresetPage() {
           )}
         </View>
         {presets.length > 0 && (
-          <Text style={[styles.sectionDesc, { textAlign: 'center', marginBottom: 0 }]}>
-            {'플랜 보기 → 홈에 적용하기로 언제든 바꿀 수 있어요'}
+          <Text style={[styles.sectionDesc, { textAlign: 'center', marginBottom: 0 }]} maxFontSizeMultiplier={1.3} numberOfLines={1}>
+            {'플랜 보기 → 홈에 적용'}
           </Text>
         )}
         </View>
@@ -801,12 +805,14 @@ const styles = StyleSheet.create({
   backBtn: {width: 40, alignItems: 'flex-start'},
   backText: {fontSize: 28, color: '#333', lineHeight: 34},
   headerTitle: {fontSize: 17, fontWeight: '700', color: '#111'},
-  scrollContent: {paddingHorizontal: 16, paddingTop: 20},
-  section: {marginBottom: 24},
+  scrollContent: {paddingHorizontal: 16, paddingTop: 14},
+  section: {marginBottom: 14},
   sectionHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6},
   sectionTitle: {fontSize: 15, fontWeight: '700', color: '#111'},
-  sectionDesc: {fontSize: 13, color: '#888', lineHeight: 19, marginBottom: 12},
-  saveBtn: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 14, alignItems: 'center'},
+  sectionDesc: {fontSize: 13, color: '#888', lineHeight: 19, marginBottom: 10},
+  saveBtn: {backgroundColor: '#22C55E', borderRadius: 14, paddingVertical: 12, alignItems: 'center'},
+  saveRow: {flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#EEE', paddingHorizontal: 14, paddingVertical: 12},
+  saveBtnCompact: {paddingHorizontal: 16, paddingVertical: 10},
   saveBtnDisabled: {backgroundColor: '#ccc'},
   saveBtnText: {color: '#fff', fontSize: 15, fontWeight: '700'},
   saveHint: {fontSize: 12, color: '#F59E0B', marginTop: 8, textAlign: 'center'},
@@ -814,7 +820,7 @@ const styles = StyleSheet.create({
   addNewBtnDisabled: {backgroundColor: '#F3F4F6'},
   addNewBtnText: {fontSize: 13, fontWeight: '600', color: '#16A34A'},
   addNewBtnTextDisabled: {color: '#AAA'},
-  slotInfo: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10},
+  slotInfo: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8},
   slotInfoText: {fontSize: 12, color: '#9CA3AF'},
   slotAddBtn: {backgroundColor: '#FFF7ED', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5},
   slotAddBtnDisabled: {backgroundColor: '#F3F4F6'},
@@ -822,8 +828,8 @@ const styles = StyleSheet.create({
   emptyBox: {backgroundColor: '#fff', borderRadius: 14, paddingVertical: 28, alignItems: 'center', borderWidth: 1, borderColor: '#EEE'},
   emptyText: {fontSize: 14, color: '#BBB', marginBottom: 4},
   emptySubText: {fontSize: 12, color: '#CCC'},
-  presetCard: {backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#EEE'},
-  presetCardTop: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12},
+  presetCard: {backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: '#EEE'},
+  presetCardTop: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10},
   presetCardLeft: {flex: 1},
   presetName: {fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 3},
   presetMeta: {fontSize: 12, color: '#AAA'},
@@ -832,10 +838,10 @@ const styles = StyleSheet.create({
   loadBtnText: {fontSize: 13, fontWeight: '600', color: '#16A34A'},
   deleteBtn: {backgroundColor: '#FFF1F1', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6},
   deleteBtnText: {fontSize: 13, fontWeight: '600', color: '#E53E3E'},
-  dayRow: {borderTopWidth: 1, borderTopColor: '#F5F5F5', paddingTop: 12},
+  dayRow: {borderTopWidth: 1, borderTopColor: '#F5F5F5', paddingTop: 10},
   dayRowLabel: {fontSize: 12, color: '#999', marginBottom: 8},
-  dayChips: {flexDirection: 'row', gap: 6},
-  dayChip: {width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6'},
+  dayChips: {flexDirection: 'row', gap: 5, flexWrap: 'wrap', flex: 1},
+  dayChip: {width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6'},
   dayChipActive: {backgroundColor: '#22C55E'},
   dayChipOther: {opacity: 0.35},
   dayChipText: {fontSize: 13, fontWeight: '600', color: '#555'},

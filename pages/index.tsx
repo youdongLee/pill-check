@@ -19,12 +19,12 @@ import {
 } from 'react-native';
 import { usePills } from '../stores/PillContext';
 import { useStamps } from '../stores/StampContext';
-import { Pill, Intake } from '../data/types';
+import { Pill } from '../data/types';
 import { PRESET_TIMES } from '../data/constants';
-import { formatKoreanDate } from '../data/utils';
 import { AD_IDS, DAILY_AMOUNT, STREAK_AMOUNT } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
 import { ImageAd, TopBanner } from '../src/AdSlot';
+import { AddTile, KEY_MAX, PillTile, SUB_MAX } from '../src/PillTile';
 import { DevPanel } from '../src/DevPanel';
 import { SHOW_DEV_PANEL } from '../src/devFlags';
 
@@ -203,7 +203,45 @@ function HomePage() {
   // 오늘 도장 버튼: 복용 체크를 다 했고 오늘 도장이 없을 때. 광고를 못 띄우는 환경이면 숨긴다(광고 없이 지급 없음).
   const showDailyAdBtn = allDone && !todayStamped && ad.supported;
   const showStreakAdBtn = canEarnStreak && !dailyPending && ad.supported;
-  const allPaidToday = todayStamped && !dailyPending && !streakPending && !canEarnStreak;
+  const dayName = DAY_NAMES[new Date(today.replace(/-/g, '/')).getDay()];
+
+  // 도장 버튼 줄 — 지금 할 수 있는 것 하나만. 다 받았으면 줄 자체가 없다.
+  const stampAction: { label: string; onPress: () => void; disabled: boolean; gold: boolean } | null =
+    showDailyAdBtn
+      ? {
+          label: ad.loaded ? `🎯 광고 보고 오늘 도장 받기 · ${DAILY_AMOUNT}원` : '광고 준비 중...',
+          disabled: !ad.loaded || ad.playing,
+          gold: false,
+          onPress: () =>
+            ad.confirmAndPlay(
+              {
+                title: '오늘의 도장 받기',
+                message: `짧은 광고를 보고 오늘의 복약 도장을 받아보세요!\n받은 도장을 누르면 토스포인트 ${DAILY_AMOUNT}원을 받아요.`,
+                confirm: '광고 보고 도장 받기',
+              },
+              onEarnedDaily,
+            ),
+        }
+      : dailyPending
+        ? { label: `🏅 도장 눌러서 ${DAILY_AMOUNT}원 받기`, disabled: paying, gold: false, onPress: onClaimDaily }
+        : showStreakAdBtn
+          ? {
+              label: ad.loaded ? `🏆 7일 연속! 광고 보고 도장 받기 · ${STREAK_AMOUNT}원` : '광고 준비 중...',
+              disabled: !ad.loaded || ad.playing,
+              gold: true,
+              onPress: () =>
+                ad.confirmAndPlay(
+                  {
+                    title: '7일 연속 달성!',
+                    message: `짧은 광고를 보고 7일 연속 도장을 받아보세요!\n받은 도장을 누르면 토스포인트 ${STREAK_AMOUNT}원을 받아요.`,
+                    confirm: '광고 보고 도장 받기',
+                  },
+                  onEarnedStreak,
+                ),
+            }
+          : streakPending
+            ? { label: `🏆 7일 도장 눌러서 ${STREAK_AMOUNT}원 받기`, disabled: paying, gold: true, onPress: onClaimStreak }
+            : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -211,209 +249,95 @@ function HomePage() {
       {/* 맨 위 줄배너 — 고정이 아니라 스크롤 첫 줄 */}
       <TopBanner position="home_top" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerDate}>{formatKoreanDate(today)}</Text>
-        </View>
-        <TouchableOpacity onPress={() => navigation.navigate('/preset')} activeOpacity={0.7} style={styles.planBadge}>
-          <Text style={styles.planBadgeText}>내 플랜</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 메인 점선 카드 */}
-      <View style={styles.mainCard}>
-        {/* 진행 상황 */}
-        <View style={styles.progressSlot}>
-          <View style={styles.progressLeft}>
-            <Text style={styles.progressCount}>
-              {takenCount} / {totalCount === 0 ? '0' : totalCount}
-            </Text>
-            <Text style={styles.progressLabel}>
-              {allDone && totalCount > 0 ? '🎉 모두 복용 완료!' : '복약 완료'}
-            </Text>
-          </View>
-          <View style={styles.progressBarWrap}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-            </View>
+      {/* 한 줄 머리: 왼쪽 '토 · 3/3 복용 ✓', 오른쪽 '🔥5일 · 내 플랜 · 관리' + 얇은 진행 막대 */}
+      <View style={styles.topCard}>
+        <View style={styles.headRow}>
+          <Text style={styles.headLeft} maxFontSizeMultiplier={KEY_MAX}>
+            {`${dayName} · ${takenCount}/${totalCount} 복용${allDone ? ' ✓' : ''}`}
+          </Text>
+          <View style={styles.headRight}>
+            {stamps.length > 0 && (
+              <Text style={styles.headStreak} maxFontSizeMultiplier={SUB_MAX}>{`🔥${streakCount}일`}</Text>
+            )}
+            <TouchableOpacity onPress={() => navigation.navigate('/preset')} activeOpacity={0.7} style={styles.headChip} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+              <Text style={styles.headChipText} maxFontSizeMultiplier={SUB_MAX}>내 플랜</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('/manage')} activeOpacity={0.7} style={styles.headChip} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+              <Text style={styles.headChipText} maxFontSizeMultiplier={SUB_MAX}>관리</Text>
+            </TouchableOpacity>
           </View>
         </View>
+        <View style={styles.thinTrack}>
+          <View style={[styles.thinFill, { width: `${progress * 100}%` }]} />
+        </View>
 
-        {/* 미션 도장 (카드 내부) */}
+        {/* 도장 7칸 — 금액 줄·'오늘 도장 완료' 줄 없음. 라벨은 '오늘' 칸에만 */}
         {(pills.length > 0 || stamps.length > 0) && (
-          <>
-            <View style={styles.cardDivider} />
-            <View style={styles.stampInCard}>
-              <View style={styles.stampHeader}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.stampTitle}>미션 도장</Text>
-                  <Text style={styles.stampRewardHint}>{`복약완료+${DAILY_AMOUNT}원 · 7일연속+${STREAK_AMOUNT}원`}</Text>
-                </View>
-                {stamps.length > 0 && (
-                  <Text style={styles.streakBadge}>🔥 {streakCount}일 연속</Text>
-                )}
-              </View>
-              <View style={styles.stampGrid}>
-                {Array.from({ length: 7 }, (_, i) => {
-                  const date = stamps[i];
-                  const stamped = i < stamps.length;
-                  const isTodaySlot = !todayStamped && i === stamps.length;
-                  let label = '';
-                  if (!date) label = isTodaySlot ? '오늘' : '';
-                  else if (date === today) label = '오늘';
-                  else label = DAY_NAMES[new Date(date.replace(/-/g, '/')).getDay()];
-                  return (
-                    <View key={i} style={styles.stampDayCol}>
-                      <View style={[styles.stampCircle, stamped && styles.stampCircleDone, isTodaySlot && styles.stampCircleToday]}>
-                        <Text style={styles.stampCircleText}>{stamped ? '🏅' : ''}</Text>
-                      </View>
-                      <Text style={[styles.stampDayLabel, isTodaySlot && { color: PRIMARY_DARK, fontWeight: '700' }]}>
-                        {label}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-              {showDailyAdBtn && (
-                <TouchableOpacity
-                  style={[styles.stampActionBtn, !ad.loaded && styles.stampActionBtnDisabled]}
-                  onPress={() =>
-                    ad.confirmAndPlay(
-                      {
-                        title: '오늘의 도장 받기',
-                        message: `짧은 광고를 보고 오늘의 복약 도장을 받아보세요!\n받은 도장을 누르면 토스포인트 ${DAILY_AMOUNT}원을 받아요.`,
-                        confirm: '광고 보고 도장 받기',
-                      },
-                      onEarnedDaily,
-                    )
-                  }
-                  disabled={!ad.loaded || ad.playing}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.stampActionBtnText}>
-                    {ad.loaded ? '🎯 광고 보고 오늘 도장 받기' : '광고 준비 중...'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {dailyPending && (
-                <TouchableOpacity
-                  style={[styles.stampActionBtn, paying && styles.stampActionBtnDisabled]}
-                  onPress={onClaimDaily}
-                  disabled={paying}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.stampActionBtnText}>{`🏅 도장 눌러서 ${DAILY_AMOUNT}원 받기`}</Text>
-                </TouchableOpacity>
-              )}
-              {todayStamped && !dailyPending && !canEarnStreak && !streakPending && !streakDone && (
-                <View style={styles.stampDoneRow}>
-                  <Text style={styles.stampDoneText}>🏅 오늘 도장 완료!</Text>
-                </View>
-              )}
-              {streakDone && (
-                <View style={styles.stampDoneRow}>
-                  <Text style={styles.stampDoneText}>🏆 7일 연속 보상 수령 완료!</Text>
-                </View>
-              )}
-              {showStreakAdBtn && (
-                <TouchableOpacity
-                  style={[styles.streakActionBtn, !ad.loaded && styles.stampActionBtnDisabled]}
-                  onPress={() =>
-                    ad.confirmAndPlay(
-                      {
-                        title: '7일 연속 달성!',
-                        message: `짧은 광고를 보고 7일 연속 도장을 받아보세요!\n받은 도장을 누르면 토스포인트 ${STREAK_AMOUNT}원을 받아요.`,
-                        confirm: '광고 보고 도장 받기',
-                      },
-                      onEarnedStreak,
-                    )
-                  }
-                  disabled={!ad.loaded || ad.playing}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.streakActionBtnText}>
-                    {ad.loaded ? '🏆 7일 연속! 광고 보고 도장 받기' : '광고 준비 중...'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {streakPending && !dailyPending && (
-                <TouchableOpacity
-                  style={[styles.streakActionBtn, paying && styles.stampActionBtnDisabled]}
-                  onPress={onClaimStreak}
-                  disabled={paying}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.streakActionBtnText}>{`🏆 7일 연속 도장 눌러서 ${STREAK_AMOUNT}원 받기`}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </>
-        )}
-
-      </View>
-
-      {/* 이미지 광고 ① — 오늘 도장·지급이 다 끝난 뒤에만, 도장 카드 바로 아래(시선이 끝나는 곳).
-          위는 카드의 '오늘 도장 완료' 글, 아래는 목록 제목 글이라 버튼과 붙지 않는다. */}
-      {allPaidToday && sortedIntakes.length > 0 && (
-        <ImageAd adGroupId={AD_IDS.homeAfterStamp} position="home_after_stamp" />
-      )}
-
-      {/* 오늘 챙길 영양제 */}
-      <Text style={styles.sectionTitle}>오늘 챙길 영양제</Text>
-
-      {/* 영양제 추가 버튼 */}
-      {!atSlotLimit ? (
-        <TouchableOpacity style={styles.addPillBtn} onPress={openQuickAdd} activeOpacity={0.85}>
-          <Text style={styles.addPillBtnPlus}>+</Text>
-          <Text style={styles.addPillBtnText}>영양제 추가하기</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity style={styles.addPillBtnLocked} onPress={() => setShowSlotModal(true)} activeOpacity={0.85}>
-          <Text style={styles.addPillBtnLockedIcon}>🔒</Text>
-          <Text style={styles.addPillBtnLockedText}>슬롯이 꽉 찼어요 · 광고 보고 추가하기</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* 복약 체크 리스트 */}
-      <View style={styles.listWrap}>
-        {sortedIntakes.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>💊</Text>
-            <Text style={styles.emptyTitle}>등록된 영양제가 없어요</Text>
-            <Text style={styles.emptyDesc}>위 버튼으로{'\n'}영양제를 추가해보세요</Text>
-          </View>
-        ) : (
-          <View style={styles.pillGrid}>
-            {sortedIntakes.map((intake) => {
-              const pill = activePillMap.get(intake.pillId);
-              if (!pill) return null;
+          <View style={styles.stripRow}>
+            {Array.from({ length: 7 }, (_, i) => {
+              const date = stamps[i];
+              const stamped = i < stamps.length;
+              const isTodaySlot = !todayStamped && i === stamps.length;
+              const isToday = isTodaySlot || date === today;
               return (
-                <PillGridItem
-                  key={`${intake.pillId}-${intake.time}`}
-                  pill={pill}
-                  intake={intake}
-                  onToggle={toggleIntake}
-                />
+                <View key={i} style={styles.stripCol}>
+                  <View style={[styles.stripCircle, stamped && styles.stampCircleDone, isTodaySlot && styles.stampCircleToday]}>
+                    <Text style={styles.stripCircleText} maxFontSizeMultiplier={1.2}>{stamped ? '🏅' : ''}</Text>
+                  </View>
+                  <Text style={[styles.stripLabel, isToday && styles.stripLabelToday]} maxFontSizeMultiplier={SUB_MAX}>
+                    {isToday ? '오늘' : ' '}
+                  </Text>
+                </View>
               );
             })}
           </View>
         )}
+
+        {/* 버튼 줄은 할 일이 있을 때만 */}
+        {stampAction && (
+          <TouchableOpacity
+            style={[stampAction.gold ? styles.streakActionBtn : styles.stampActionBtn, styles.actionBtnTight, stampAction.disabled && styles.stampActionBtnDisabled]}
+            onPress={stampAction.onPress}
+            disabled={stampAction.disabled}
+            activeOpacity={0.85}
+          >
+            <Text style={stampAction.gold ? styles.streakActionBtnText : styles.stampActionBtnText} maxFontSizeMultiplier={SUB_MAX}>
+              {stampAction.label}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {sortedIntakes.length > 0 && (
-        <>
-          <Text style={styles.listCaption}>{`드신 영양제를 누르면 체크돼요 · 슬롯 ${usedSlots}/${maxSlots}`}</Text>
-          {/* 이미지 광고 ② — 목록과 '영양제 관리' 사이(한 번 스크롤이면 닿는 곳). 앞뒤는 글이라 버튼과 떨어져 있다. */}
-          <ImageAd adGroupId={AD_IDS.homeMid} position="home_mid" />
-        </>
+      {/* 체크 안내 — 오늘 아무것도 체크 안 했을 때만 */}
+      {totalCount > 0 && takenCount === 0 && (
+        <Text style={styles.hint} maxFontSizeMultiplier={SUB_MAX}>드신 영양제를 누르면 체크돼요</Text>
       )}
 
-      {/* 영양제 관리 */}
-      <Text style={styles.sectionTitle}>영양제 관리</Text>
-      <TouchableOpacity style={styles.manageButton} onPress={() => navigation.navigate('/manage')} activeOpacity={0.85}>
-        <Text style={styles.manageButtonText}>영양제 관리 (수정/삭제)</Text>
-      </TouchableOpacity>
+      {/* 복용 목록 + 마지막 칸 '+ 추가' */}
+      <View style={styles.listWrap}>
+        {sortedIntakes.length === 0 && (
+          <Text style={styles.emptyLine} maxFontSizeMultiplier={KEY_MAX}>💊 드시는 영양제를 추가해보세요</Text>
+        )}
+        <View style={styles.pillGrid}>
+          {sortedIntakes.map((intake) => {
+            const pill = activePillMap.get(intake.pillId);
+            if (!pill) return null;
+            return (
+              <PillTile
+                key={`${intake.pillId}-${intake.time}`}
+                pill={pill}
+                time={intake.time}
+                taken={intake.taken}
+                onPress={() => toggleIntake(intake.pillId, intake.time)}
+              />
+            );
+          })}
+          <AddTile used={usedSlots} max={maxSlots} onPress={() => (atSlotLimit ? setShowSlotModal(true) : openQuickAdd())} />
+        </View>
+      </View>
+
+      {/* 이미지 광고 — 목록 바로 아래(첫 화면 안). 목록 1개 이상일 때만. 타일과 20px 띄움 */}
+      {sortedIntakes.length > 0 && <ImageAd adGroupId={AD_IDS.homeMid} position="home_mid" />}
 
       {SHOW_DEV_PANEL && <View style={styles.listWrap}><DevPanel /></View>}
       <View style={{ height: 24 }} />
@@ -624,41 +548,6 @@ function HomePage() {
   );
 }
 
-function PillGridItem({ pill, intake, onToggle }: {
-  pill: Pill;
-  intake: Intake;
-  onToggle: (pillId: string, time: string) => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.gridCell}
-      onPress={() => onToggle(intake.pillId, intake.time)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.gridCard, intake.taken && styles.gridCardTaken, { borderColor: pill.color + '50' }]}>
-        {/* 아이콘 위: 시간 */}
-        <Text style={[styles.gridTimeText, intake.taken && styles.gridTimeTextTaken]}>
-          {intake.time}
-        </Text>
-        {/* 아이콘 */}
-        <View style={[styles.gridEmojiWrap, { backgroundColor: pill.color + '22' }]}>
-          <Text style={styles.gridEmoji}>{pill.emoji}</Text>
-          {intake.taken && (
-            <View style={styles.gridCheckBadge}>
-              <Text style={styles.gridCheckText}>✓</Text>
-            </View>
-          )}
-        </View>
-        {/* 아이콘 아래: 이름 + 용량 */}
-        <Text style={[styles.gridName, intake.taken && styles.gridNameTaken]} numberOfLines={2}>
-          {pill.name}
-        </Text>
-        <Text style={styles.gridDosage}>{pill.dosageAmount && pill.dosageUnit ? `${pill.dosageAmount}${pill.dosageUnit}` : ' '}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
   loadingContainer: {flex: 1, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center'},
   container: {flex: 1, backgroundColor: '#F0FDF4'},
@@ -726,8 +615,27 @@ const styles = StyleSheet.create({
   streakActionBtnText: {fontSize: 14, fontWeight: '700', color: '#FFFFFF'},
   banner: {width: '100%', height: 96, overflow: 'hidden'},
   // 한 장 스크롤 레이아웃 (2026-10-10)
+  // 3차(10/10): 머리 한 줄 + 도장 띠 + 할 일 있을 때만 버튼 → 첫 화면에 이미지 광고까지
+  topCard: {marginHorizontal: 16, marginTop: 10, borderWidth: 1.5, borderColor: '#22C55E', borderStyle: 'dashed', borderRadius: 16, backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10},
+  headRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6},
+  headLeft: {fontSize: 17, fontWeight: '800', color: '#16A34A', flexShrink: 1},
+  headRight: {flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap'},
+  headStreak: {fontSize: 13, fontWeight: '700', color: '#F59E0B'},
+  headChip: {paddingHorizontal: 8, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: '#22C55E', backgroundColor: '#DCFCE7'},
+  headChipText: {fontSize: 12, fontWeight: '700', color: '#16A34A'},
+  thinTrack: {height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, overflow: 'hidden', marginTop: 8},
+  thinFill: {height: 4, backgroundColor: '#22C55E', borderRadius: 2},
+  stripRow: {flexDirection: 'row', justifyContent: 'space-between', marginTop: 10},
+  stripCol: {alignItems: 'center', flex: 1},
+  stripCircle: {width: 30, height: 30, borderRadius: 15, backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center'},
+  stripCircleText: {fontSize: 15},
+  stripLabel: {fontSize: 10, color: '#9CA3AF', marginTop: 2},
+  stripLabelToday: {color: '#16A34A', fontWeight: '700'},
+  actionBtnTight: {marginTop: 10, paddingVertical: 11},
+  hint: {fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 8},
+  emptyLine: {fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 8},
   pageContent: {paddingBottom: 8},
-  listWrap: {paddingHorizontal: 16, paddingTop: 6},
+  listWrap: {paddingHorizontal: 12, paddingTop: 10},
   sectionTitle: {fontSize: 15, fontWeight: '700', color: '#111827', marginHorizontal: 20, marginTop: 14, marginBottom: 8},
   listCaption: {fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 2, marginHorizontal: 20},
   manageButton: {marginHorizontal: 20, marginBottom: 16, marginTop: 8, paddingVertical: 13, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center'},
