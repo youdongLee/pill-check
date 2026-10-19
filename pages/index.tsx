@@ -24,6 +24,7 @@ import { PRESET_TIMES } from '../data/constants';
 import { AD_IDS, DAILY_AMOUNT, STREAK_AMOUNT } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
 import { ImageAd, TopBanner } from '../src/AdSlot';
+import { HotdealCard } from '../src/HotdealCard';
 import { AddTile, KEY_MAX, PillTile, SUB_MAX } from '../src/PillTile';
 import { DevPanel } from '../src/DevPanel';
 import { SHOW_DEV_PANEL } from '../src/devFlags';
@@ -337,6 +338,9 @@ function HomePage() {
           <AddTile used={usedSlots} max={maxSlots} onPress={() => (atSlotLimit ? setShowSlotModal(true) : openQuickAdd())} />
         </View>
       </View>
+
+      {/* 핫딜 특가 오늘의 특가 1개(건강 우선) — 이미지 광고 바로 위(10/19 형님) */}
+      <HotdealCard />
 
       {/* 이미지 광고 — 목록 바로 아래(첫 화면 안). 목록 1개 이상일 때만. 타일과 20px 띄움 */}
       {sortedIntakes.length > 0 && <ImageAd adGroupId={AD_IDS.homeMid} position="home_mid" />}
