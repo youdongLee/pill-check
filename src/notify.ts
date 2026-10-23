@@ -11,9 +11,9 @@ import { INTERNAL__appBridgeHandler, isMinVersionSupported } from '@apps-in-toss
  *    (혈압수첩 src/notify.ts 와 같은 방식).
  * 동의 화면은 **유저가 버튼을 눌렀을 때만** 띄운다(들어오자마자 띄우면 검수 반려 사유).
  */
-// 10/23 MCP 템플릿 생성이 '스마트 메시지 캠페인을 찾을 수 없습니다'로 5번 실패(202262~202266, 코드 daily_pill·morning_pill·daily_pill_am·am_pill·pill_9am 은 이미 점유됨)
-// → 템플릿은 이 코드(morning9)로 만든다. 템플릿이 생기기 전엔 번들을 만들지 말 것
-const TEMPLATE_CODE = 'pillcheck-morning9';
+// 10/23: MCP 가 '스마트 메시지 캠페인을 찾을 수 없습니다' 오류를 냈지만 5번째(pill_9am, 202266)는 실제로 APPROVED 됐다.
+// push_template_list 는 isSmartMessage=true 를 줘야 REGULAR 템플릿이 보인다(202262~202265 는 미승인 고아).
+const TEMPLATE_CODE = 'pillcheck-pill_9am';
 const MIN_VERSION = { android: '5.255.0', ios: '5.255.0' } as const;
 
 /** 동의했거나 거절한 사람에게는 줄을 다시 보이지 않는다 */
