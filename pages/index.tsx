@@ -1,5 +1,5 @@
 import { createRoute } from '@granite-js/react-native';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -25,6 +25,7 @@ import { AD_IDS, DAILY_AMOUNT, STREAK_AMOUNT } from '../src/ads';
 import { useRewardAd } from '../src/useRewardAd';
 import { ImageAd, TopBanner } from '../src/AdSlot';
 import { HotdealCard } from '../src/HotdealCard';
+import { loadNotifyState, notifySupported, requestDailyNotify, type NotifyState } from '../src/notify';
 import { AddTile, KEY_MAX, PillTile, SUB_MAX } from '../src/PillTile';
 import { DevPanel } from '../src/DevPanel';
 import { SHOW_DEV_PANEL } from '../src/devFlags';
@@ -54,6 +55,22 @@ function HomePage() {
 
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
+
+  // 매일 오전 9시 알림 — 동의하거나 거절하면 줄을 다시 안 보인다
+  const [notify, setNotify] = useState<NotifyState>('agreed');
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const canNotify = useMemo(() => notifySupported(), []);
+  useEffect(() => {
+    void loadNotifyState().then(setNotify);
+  }, []);
+  const askNotify = async () => {
+    setNotifyBusy(true);
+    const r = await requestDailyNotify();
+    setNotifyBusy(false);
+    if (r === 'error') return;
+    setNotify(r);
+    if (r === 'agreed') Alert.alert('알림을 켰어요', '매일 오전 9시에 영양제 드실 시간을 알려드릴게요.');
+  };
 
   // 리워드 광고는 오늘 실제로 쓸 수 있을 때만 미리 불러온다:
   //  · 오늘 도장 전(영양제가 있을 때) · 7일 연속 도장 받을 차례 · 자리 추가 창을 연 동안
@@ -308,6 +325,16 @@ function HomePage() {
               {stampAction.label}
             </Text>
           </TouchableOpacity>
+        )}
+
+        {/* 할 일 버튼이 없을 때만 그 자리에 알림 줄 — 첫 화면 이미지 광고 위치가 더 내려가지 않게 */}
+        {!stampAction && canNotify && notify === 'unknown' && (
+          <View style={styles.notifyRow}>
+            <Text style={styles.notifyText} maxFontSizeMultiplier={SUB_MAX}>⏰ 매일 오전 9시 영양제 알림</Text>
+            <TouchableOpacity style={[styles.notifyBtn, notifyBusy && styles.stampActionBtnDisabled]} onPress={askNotify} disabled={notifyBusy} activeOpacity={0.85}>
+              <Text style={styles.notifyBtnText} maxFontSizeMultiplier={SUB_MAX}>{notifyBusy ? '잠시만요…' : '알림 받기'}</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -638,6 +665,10 @@ const styles = StyleSheet.create({
   stripLabel: {fontSize: 10, color: '#9CA3AF', marginTop: 2},
   stripLabelToday: {color: '#16A34A', fontWeight: '700'},
   actionBtnTight: {marginTop: 10, paddingVertical: 11},
+  notifyRow: {flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 10},
+  notifyText: {flex: 1, fontSize: 14, fontWeight: '700', color: '#111827'},
+  notifyBtn: {backgroundColor: '#22C55E', borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14},
+  notifyBtnText: {fontSize: 14, fontWeight: '700', color: '#FFFFFF'},
   hint: {fontSize: 12, color: '#6B7280', textAlign: 'center', marginTop: 8},
   emptyLine: {fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 8},
   pageContent: {paddingBottom: 8},
