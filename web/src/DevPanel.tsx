@@ -8,7 +8,7 @@ import { dayShift, notifyDayChanged } from './domain/dayKey';
 import { devFlags } from './domain/devFlags';
 import { TIMEOUT, adDebug, grantLog, readKey, rewardSupported } from './lib/platform';
 import { MAX_SLOTS_KEY, PILLS_KEY, RECORD_KEY } from './stores/PillContext';
-import { DAY_SCHEDULE_KEY, MAX_PRESETS_KEY, PRESETS_KEY } from './stores/PresetContext';
+import { MAX_PRESETS_KEY, PRESETS_KEY } from './stores/PresetContext';
 import { CLAIMED_DATE_KEY, PAYOUT_KEY, STAMPS_KEY, useStamps } from './stores/StampContext';
 import { legacyInfo } from './lib/legacy';
 
@@ -40,7 +40,6 @@ export function DevPanel() {
       CLAIMED_DATE_KEY,
       PAYOUT_KEY,
       PRESETS_KEY,
-      DAY_SCHEDULE_KEY,
       MAX_PRESETS_KEY,
       NOTIFY_STATE_KEY,
     ];

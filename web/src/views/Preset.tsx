@@ -1,9 +1,11 @@
 /**
- * 내 플랜 — RN pages/preset.tsx. 한 장 스크롤: 머리 '내 플랜' + 도움말 → 줄배너 → 현재 플랜 저장 → 저장된 플랜(요일) → 이미지 광고.
- * 플랜 빌더는 전체 화면 창(RN Modal). 저장·새 플랜·요일 배정·슬롯 추가·홈에 적용은 전부 광고(지급 없음).
+ * 내 플랜 — RN pages/preset.tsx. 한 장 스크롤: 머리 '내 플랜' + 도움말 → 줄배너 → 현재 플랜 저장 → 저장된 플랜 → 이미지 광고.
+ * 플랜 빌더는 전체 화면 창(RN Modal). 저장·새 플랜·슬롯 추가·홈에 적용은 전부 광고(지급 없음).
  *
- * 웹에서 바꾼 것: RN 빌더의 '‹'(영양제 추가 → 목록) 버튼은 뒤로가기 모양이라 반려 사유 — '닫기' 글자 버튼으로.
- * RN 은 광고가 준비되지 않았을 때 몇몇 버튼(새 플랜 추가·저장 시트·요일)이 아무 반응 없이 끝났다 → '광고 준비 중이에요' 안내.
+ * 웹에서 바꾼 것:
+ *  - 요일 배정(요일 칩·광고 게이트·도움말 문장)을 뺐다(형님 11/25). RN 에서도 배정만 되고 제안해 주는 곳이 없던 기능.
+ *  - RN 빌더의 '‹'(영양제 추가 → 목록) 버튼은 뒤로가기 모양이라 반려 사유 — '닫기' 글자 버튼으로.
+ *  - RN 은 광고가 준비되지 않았을 때 몇몇 버튼(새 플랜 추가·저장 시트)이 아무 반응 없이 끝났다 → '광고 준비 중이에요' 안내.
  */
 import { useState } from 'react';
 import { ImageAd, TopBanner } from '../AdSlot';
@@ -17,21 +19,10 @@ import { useRewardAd, type AdGuide } from '../useRewardAd';
 
 const DEFAULT_PLAN_SLOTS = 3;
 
-const DAYS = [
-  { label: '월', day: 1 },
-  { label: '화', day: 2 },
-  { label: '수', day: 3 },
-  { label: '목', day: 4 },
-  { label: '금', day: 5 },
-  { label: '토', day: 6 },
-  { label: '일', day: 0 },
-];
-
 export function PresetView() {
   const ask = useAsk();
   const { pills, replacePills } = usePills();
-  const { presets, maxPresets, daySchedule, savePreset, updatePreset, deletePreset, assignDay, unassignDay, increasePresetSlot } =
-    usePresets();
+  const { presets, maxPresets, savePreset, updatePreset, deletePreset, increasePresetSlot } = usePresets();
 
   // 플랜 화면은 저장·적용·자리 추가가 전부 광고라 들어오면 하나만 미리 불러둔다
   const ad = useRewardAd(true);
@@ -224,22 +215,6 @@ export function PresetView() {
     }
   };
 
-  // ── 요일 배정 (광고 필요) ──
-  const handleToggleDay = (day: number, presetId: string) => {
-    if (daySchedule[day] === presetId) {
-      void unassignDay(day).then((ok) => {
-        if (!ok) saveFailed();
-      });
-      return;
-    }
-    playAdThen(
-      async () => {
-        if (!(await assignDay(day, presetId))) saveFailed();
-      },
-      { title: '요일 자동 제안', message: '짧은 광고를 보고 이 요일에 플랜을 자동으로 제안받을 수 있어요.', confirm: '광고 보고 설정' },
-    );
-  };
-
   // ── 플랜 슬롯 추가 ──
   const promptSlotAdd = async () => {
     const go = await ask(
@@ -259,7 +234,7 @@ export function PresetView() {
     const nextMax = Math.max(1, maxPresets - 1);
     const slotMsg = maxPresets > 1 ? `\n\n⚠️ 플랜 슬롯도 ${maxPresets}개 → ${nextMax}개로 줄어들어요.` : '';
     const ok = await ask(`"${preset.name}" 삭제`, `이 플랜을 삭제할까요?${slotMsg}`, '삭제', '취소', true);
-    if (ok) await deletePreset(preset.id);
+    if (ok && !(await deletePreset(preset.id))) saveFailed();
   };
 
   const applyToHome = () => {
@@ -370,33 +345,13 @@ export function PresetView() {
                     </button>
                   </div>
                 </div>
-
-                {/* 요일 배정 */}
-                <div className="day-row">
-                  <span className="day-row-label">요일</span>
-                  <div className="day-chips">
-                    {DAYS.map(({ label, day }) => {
-                      const assigned = daySchedule[day] === preset.id;
-                      const assignedOther = daySchedule[day] !== undefined && daySchedule[day] !== preset.id;
-                      return (
-                        <button
-                          key={day}
-                          className={`day-chip ${assigned ? 'active' : ''} ${assignedOther ? 'other' : ''}`}
-                          onClick={() => handleToggleDay(day, preset.id)}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             ))
           )}
         </div>
         {presets.length > 0 && <p className="section-desc one center">{'플랜 보기 → 홈에 적용'}</p>}
       </div>
-      {/* 이미지 광고 — 저장된 플랜이 있을 때만, 목록 뒤 안내 글 다음(요일 버튼과 떨어진 자리) */}
+      {/* 이미지 광고 — 저장된 플랜이 있을 때만, 목록 뒤 안내 글 다음(버튼과 떨어진 자리) */}
       {presets.length > 0 && <ImageAd adGroupId={AD_IDS.presetImage} position="preset_after_list" />}
       <div style={{ height: 32 }} />
 
@@ -412,9 +367,7 @@ export function PresetView() {
           </div>
           <div className="help-section">
             <p className="help-sec-title">▶️ 플랜 적용하기</p>
-            <p className="help-item">• 플랜 보기 → 홈에 적용하기: 해당 플랜으로 홈 교체 (광고 1회)</p>
-            <p className="help-item">• 요일 배정: 요일 탭 선택 → 해당 요일에 자동 제안 (광고 1회)</p>
-          </div>
+            <p className="help-item">• 플랜 보기 → 홈에 적용하기: 해당 플랜으로 홈 교체 (광고 1회)</p>          </div>
           <div className="help-section">
             <p className="help-sec-title">🔒 슬롯</p>
             <p className="help-item">• 플랜 슬롯 기본 1개, 광고 시청 시 +1</p>

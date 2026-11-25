@@ -50,7 +50,6 @@ function seed(opts) {
       '@pillcheck/presets',
       JSON.stringify([{ id: 'p1', name: '아침 루틴', pills: opts.pills.slice(0, 2).map(({ id, ...r }) => r), savedAt: today }]),
     );
-    localStorage.setItem('@pillcheck/daySchedule', JSON.stringify({ 1: 'p1', 3: 'p1' }));
   }
 }
 
@@ -218,6 +217,19 @@ function seed(opts) {
   await load({ pills: PILLS });
   await clickText('내 플랜');
   await snap('11-preset-empty');
+
+  // 12) 요일 배정 키(@pillcheck/daySchedule)는 웹에서 읽지도 쓰지도 지우지도 않는다 — 플랜을 지워도 그대로
+  await load({ pills: PILLS, presets: true });
+  await p.evaluate(() => localStorage.setItem('@pillcheck/daySchedule', JSON.stringify({ 1: 'p1', 3: 'p1' })));
+  await p.goto(BASE, { waitUntil: 'networkidle0' });
+  await wait(600);
+  await clickText('내 플랜');
+  await clickText('삭제', '.del-btn');
+  await clickText('삭제', '.dialog-btn');
+  const after = await p.evaluate(() => [localStorage.getItem('@pillcheck/daySchedule'), localStorage.getItem('@pillcheck/presets')]);
+  const kline = `  플랜 삭제 후 daySchedule=${after[0]} · presets=${after[1]}`;
+  console.log(kline);
+  report.push(kline);
 
   fs.writeFileSync(path.join(OUT, 'report.txt'), report.join('\n') + '\n');
   console.log(errs.length ? 'PAGE ERRORS:\n' + errs.join('\n') : 'no page errors');

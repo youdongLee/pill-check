@@ -196,18 +196,12 @@ input::placeholder { color: #9ca3af; }
 .empty-text { font-size: calc(14px * var(--f)); color: #bbb; margin-bottom: 4px; }
 .empty-sub { font-size: calc(12px * var(--f)); color: #ccc; }
 .preset-card { background: #fff; border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; border: 1px solid #eee; }
-.preset-card-top { display: flex; align-items: flex-start; margin-bottom: 10px; gap: 8px; }
+.preset-card-top { display: flex; align-items: flex-start; gap: 8px; }
 .preset-name { font-size: calc(15px * var(--f)); font-weight: 700; color: #111; margin-bottom: 3px; }
 .preset-meta { font-size: calc(12px * var(--s)); color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preset-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .load-btn { background: var(--green-light); border-radius: 8px; padding: 6px 12px; font-size: calc(13px * var(--f)); font-weight: 600; color: var(--green-dark); }
 .del-btn { background: #fff1f1; border-radius: 8px; padding: 6px 12px; font-size: calc(13px * var(--f)); font-weight: 600; color: #e53e3e; }
-.day-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid #f5f5f5; padding-top: 10px; }
-.day-row-label { font-size: calc(12px * var(--s)); color: #999; }
-.day-chips { flex: 1; display: flex; gap: 5px; flex-wrap: wrap; }
-.day-chip { width: 30px; height: 30px; border-radius: 15px; background: #f3f4f6; font-size: calc(13px * var(--s)); font-weight: 600; color: #555; }
-.day-chip.active { background: var(--green); color: #fff; }
-.day-chip.other { opacity: 0.35; }
 .name-input { display: block; width: 100%; border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 12px 14px; font-size: calc(15px * var(--f)); margin-bottom: 16px; }
 .confirm-btn { display: block; width: 100%; background: var(--green); border-radius: 14px; padding: 14px 0; font-size: calc(15px * var(--f)); font-weight: 700; color: #fff; }
 .confirm-btn.off { background: #ccc; }
