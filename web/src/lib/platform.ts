@@ -394,38 +394,65 @@ export function notifySupported(): boolean {
   }
 }
 
-/** 토스 알림 동의 화면 — 유저가 버튼을 눌렀을 때만. 이미 동의했으면 화면 없이 바로 agreed */
-export function requestAgreement(templateCode: string): Promise<AgreementResult> {
-  return new Promise((resolve) => {
+/** 진행 중인 동의 요청 — 한 번에 하나만(연타·재진입은 같은 결과를 기다린다) */
+let agreementInflight: Promise<AgreementResult> | null = null;
+
+/**
+ * 토스 알림 동의 화면 — 유저가 버튼을 눌렀을 때만. 이미 동의했으면 화면 없이 바로 agreed.
+ * 동의 창이 180초 안에 답하지 않으면 'error' 로 끝내 버튼 잠금을 푼다. 그 뒤에 늦게 온 답은 onLate 로 넘긴다
+ * (늦게 온 동의도 저장해야 다음 방문에 줄이 다시 뜨지 않는다 — 재검증 N5).
+ */
+export function requestAgreement(templateCode: string, onLate?: (r: 'agreed' | 'rejected') => void): Promise<AgreementResult> {
+  if (agreementInflight) return agreementInflight;
+  const p = new Promise<AgreementResult>((resolve) => {
     if (MOCK) {
       window.setTimeout(() => resolve('agreed'), 300);
       return;
     }
-    let done = false;
+    let settled = false;
+    let timedOut = false;
     let cleanup: (() => void) | undefined;
-    // 동의 창이 끝내 답하지 않으면 60초 뒤 오류로 끝낸다(버튼이 '잠시만요…'에 묶이지 않게)
-    const safety = window.setTimeout(() => finish('error'), 60_000);
-    const finish = (r: AgreementResult) => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(safety);
+    const release = () => {
       try {
         cleanup?.();
       } catch {
         /* 무시 */
       }
+    };
+    const safety = window.setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      settled = true;
+      resolve('error'); // 늦은 답을 받으려고 리스너는 남겨 둔다
+    }, 180_000);
+    const answer = (r: AgreementResult) => {
+      if (timedOut) {
+        timedOut = false; // 늦은 답은 한 번만
+        release();
+        if (r !== 'error') onLate?.(r);
+        return;
+      }
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(safety);
+      release();
       resolve(r);
     };
     try {
       cleanup = Notification.requestAgreement({
         options: { templateCode },
-        onEvent: ({ type }) => finish(type === 'agreementRejected' ? 'rejected' : 'agreed'),
-        onError: () => finish('error'),
+        onEvent: ({ type }) => answer(type === 'agreementRejected' ? 'rejected' : 'agreed'),
+        onError: () => answer('error'),
       });
     } catch {
-      finish('error');
+      answer('error');
     }
   });
+  agreementInflight = p;
+  void p.then(() => {
+    if (agreementInflight === p) agreementInflight = null;
+  });
+  return p;
 }
 
 /** 토스 상단 뒤로가기를 가로챈다(안쪽 화면·창이 떠 있을 때만 등록). 해제 함수 반환 */

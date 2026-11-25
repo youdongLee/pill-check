@@ -61,7 +61,11 @@ export function Home({
   const askNotify = async () => {
     if (notifyBusy) return;
     setNotifyBusy(true);
-    const r = await requestAgreement(NOTIFY_TEMPLATE_CODE);
+    const r = await requestAgreement(NOTIFY_TEMPLATE_CODE, (late) => {
+      // 안전 타이머(180초) 뒤에 늦게 온 답도 저장한다(N5)
+      void writeKey(NOTIFY_STATE_KEY, late);
+      setNotify(late);
+    });
     setNotifyBusy(false);
     if (r === 'error') {
       setNotifyHidden(true);

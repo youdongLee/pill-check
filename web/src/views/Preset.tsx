@@ -41,7 +41,8 @@ export function PresetView() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
-
+  /** 광고는 봤는데 저장이 실패한 몫 — 이 화면에 있는 동안만(N4) */
+  const [saveGranted, setSaveGranted] = useState(false);
   // ── 플랜 빌더 (신규/편집 공용) ──
   const [showPlanBuilder, setShowPlanBuilder] = useState(false);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
@@ -99,21 +100,36 @@ export function PresetView() {
     setShowSaveModal(true);
   };
 
+  /**
+   * 광고 → 저장. 시트는 저장이 성공했을 때만 닫는다.
+   * 광고는 봤는데 저장이 실패하면 이 화면에 있는 동안 '광고 본 몫'을 들고 있다가 다시 누르면 광고 없이 저장한다(재검증 N4).
+   */
+  const doSaveCurrent = async (name: string) => {
+    setSaving(true);
+    const ok = await savePreset(
+      name,
+      pills.map(({ id: _id, ...rest }) => rest),
+    );
+    setSaving(false);
+    if (ok) {
+      setSaveGranted(false);
+      setShowSaveModal(false);
+      void ask('저장 완료!', `"${name}" 플랜이 저장됐어요.`);
+    } else {
+      setSaveGranted(true);
+      saveFailed();
+    }
+  };
+
   const handleConfirmSave = () => {
     const name = saveName.trim();
-    if (!name) return;
+    if (!name || saving) return;
+    if (saveGranted) {
+      void doSaveCurrent(name);
+      return;
+    }
     if (!adLoaded) return; // 시트를 닫지 않는다(m7)
-    setShowSaveModal(false);
-    playDirect(async () => {
-      setSaving(true);
-      const ok = await savePreset(
-        name,
-        pills.map(({ id: _id, ...rest }) => rest),
-      );
-      setSaving(false);
-      if (ok) void ask('저장 완료!', `"${name}" 플랜이 저장됐어요.`);
-      else saveFailed();
-    });
+    playDirect(() => doSaveCurrent(name));
   };
 
   // ── 새 플랜 추가 ──
@@ -424,11 +440,11 @@ export function PresetView() {
         />
         {/* 광고가 준비되기 전에는 누를 수 없다 — 눌러서 시트만 닫히고 아무 일도 없는 일을 막는다(교차 검증 m7) */}
         <button
-          className={`confirm-btn ${!saveName.trim() || !adLoaded ? 'off' : ''}`}
+          className={`confirm-btn ${!saveName.trim() || saving || (!adLoaded && !saveGranted) ? 'off' : ''}`}
           onClick={handleConfirmSave}
-          disabled={!saveName.trim() || !adLoaded}
+          disabled={!saveName.trim() || saving || (!adLoaded && !saveGranted)}
         >
-          {adLoaded ? '광고 보고 저장' : '광고 준비 중...'}
+          {saving ? '저장 중...' : saveGranted ? '다시 저장' : adLoaded ? '광고 보고 저장' : '광고 준비 중...'}
         </button>
       </Sheet>
 

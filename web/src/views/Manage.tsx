@@ -57,8 +57,9 @@ export function Manage() {
     if (isLastSlot) {
       saved = await deletePill(pill.id);
     } else {
-      const r = await Promise.all([updatePill({ ...pill, times: pill.times.filter((t) => t !== time) }), decreaseSlot()]);
-      saved = r.every(Boolean);
+      // 목록 저장이 성패를 가른다(슬롯 수 줄이기는 따라 쓰는 값 — 재검증 N3)
+      saved = await updatePill({ ...pill, times: pill.times.filter((t) => t !== time) });
+      if (saved) await decreaseSlot();
     }
     if (!saved) saveFailed();
   };

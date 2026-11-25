@@ -17,26 +17,66 @@ const UNITS = ['알', 'mg', 'ml'];
 
 export type PillInput = Omit<Pill, 'id'>;
 
-/**
- * 직접 입력 시간 — 숫자 키패드에는 ':' 가 없어(웹 inputMode=numeric) 숫자 4자리를 받으면 두 자리 뒤에 ':' 를 넣는다(0830 → 08:30).
- * ':' 를 직접 치거나 붙여넣은 값(8:30·08:30)도 받는다.
- */
-export function formatTimeInput(raw: string): string {
-  const s = raw.replace(/[^\d:]/g, '');
-  if (s.includes(':')) return s.slice(0, 5);
-  const d = s.slice(0, 4);
-  return d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const validHM = (h: number, mi: number) => h >= 0 && h <= 23 && mi >= 0 && mi <= 59;
+
+/** 숫자만 → 시간: 4자리 HH:MM(0830), 3자리 H:MM(830). 아니면 null */
+function fromDigits(d: string): string | null {
+  if (d.length === 4) {
+    const h = Number(d.slice(0, 2));
+    const mi = Number(d.slice(2));
+    return validHM(h, mi) ? `${pad2(h)}:${pad2(mi)}` : null;
+  }
+  if (d.length === 3) {
+    const h = Number(d.slice(0, 1));
+    const mi = Number(d.slice(1));
+    return validHM(h, mi) ? `${pad2(h)}:${pad2(mi)}` : null;
+  }
+  return null;
 }
 
-/** 'H:MM'·'HH:MM'·'HHMM' → 'HH:MM'(00:00~23:59). 아니면 null */
+/**
+ * 직접 입력 시간 칸 — 숫자 키패드에는 ':' 가 없어(웹 inputMode=numeric) 숫자로 받아 ':' 를 넣어 보여 준다.
+ *  · 숫자(와 ':')만이면 숫자로 다시 맞춘다: 4자리 0830 → 08:30, 3자리 830 → 8:30(앞이 0으로 시작하면 08:3 — 계속 치는 중)
+ *  · 그 밖의 글자가 섞이면(8시30분·8.30) 그대로 두고, 추가할 때 normalizeTime 이 읽는다
+ */
+export function formatTimeInput(raw: string): string {
+  if (!/^[\d:]*$/.test(raw)) return raw.slice(0, 12);
+  const d = raw.replace(/:/g, '').slice(0, 4);
+  if (d.length === 4) return `${d.slice(0, 2)}:${d.slice(2)}`;
+  if (d.length === 3) {
+    // 1자리 시 + 2자리 분이 말이 되면 H:MM, 아니면 아직 치는 중인 HH:M
+    return Number(d.slice(1)) <= 59 && d[0] !== '0' ? `${d[0]}:${d.slice(1)}` : `${d.slice(0, 2)}:${d.slice(2)}`;
+  }
+  return d;
+}
+
+/**
+ * 입력 → 'HH:MM'(00:00~23:59). 아니면 null(입력칸 아래 '예: 08:30' 안내).
+ * 숫자·':' 만이면 숫자 규칙(3자리 H:MM · 4자리 HH:MM), 그 밖(8시30분·8시 5분·8.30)은 '숫자 묶음 + 구분 + 숫자 묶음'.
+ */
 export function normalizeTime(raw: string): string | null {
   const s = raw.trim();
-  const m = /^(\d{1,2}):?(\d{2})$/.exec(s);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (h > 23 || mi > 59) return null;
-  return `${String(h).padStart(2, '0')}:${m[2]}`;
+  if (/^[\d:]+$/.test(s)) {
+    const parts = s.split(':');
+    // 사람이 ':' 를 넣어 친 8:5 → 08:05 도 받는다
+    if (parts.length === 2 && parts[0].length >= 1 && parts[0].length <= 2 && parts[1].length === 2) {
+      const h = Number(parts[0]);
+      const mi = Number(parts[1]);
+      return validHM(h, mi) ? `${pad2(h)}:${pad2(mi)}` : fromDigits(s.replace(/:/g, ''));
+    }
+    return fromDigits(s.replace(/:/g, ''));
+  }
+  const m = /(\d{1,2})\D+(\d{1,2})/.exec(s);
+  if (m) {
+    const h = Number(m[1]);
+    const mi = Number(m[2]);
+    return validHM(h, mi) ? `${pad2(h)}:${pad2(mi)}` : null;
+  }
+  // '8시' 처럼 분이 없으면 정각
+  const only = /^(\d{1,2})\s*시$/.exec(s);
+  if (only && validHM(Number(only[1]), 0)) return `${pad2(Number(only[1]))}:00`;
+  return null;
 }
 
 export function PillForm({
@@ -66,6 +106,7 @@ export function PillForm({
   const [times, setTimes] = useState<string[]>(initialTimes ?? []);
   const [customTime, setCustomTime] = useState('');
   const [showCustomTime, setShowCustomTime] = useState(false);
+  const [timeError, setTimeError] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const finalName = isCustomName ? customName : selectedName;
@@ -76,7 +117,11 @@ export function PillForm({
 
   const addCustomTime = () => {
     const t = normalizeTime(customTime);
-    if (!t) return;
+    if (!t) {
+      setTimeError(true); // 조용히 무시하지 않는다 — 입력칸 아래 '예: 08:30'
+      return;
+    }
+    setTimeError(false);
     if (times.includes(t)) {
       setCustomTime('');
       setShowCustomTime(false);
@@ -225,12 +270,15 @@ export function PillForm({
             className="f-input grow"
             placeholder="HH:MM"
             value={customTime}
-            onChange={(e) => setCustomTime(formatTimeInput(e.target.value))}
+            onChange={(e) => {
+              setTimeError(false);
+              setCustomTime(formatTimeInput(e.target.value));
+            }}
             onPaste={(e) => {
               e.preventDefault();
-              setCustomTime(formatTimeInput(e.clipboardData.getData('text')));
+              setTimeError(false);
+              setCustomTime(formatTimeInput(e.clipboardData.getData('text').trim()));
             }}
-            maxLength={5}
             inputMode="numeric"
             enterKeyHint="done"
             onKeyDown={(e) => e.key === 'Enter' && addCustomTime()}
@@ -241,6 +289,7 @@ export function PillForm({
           </button>
         </div>
       )}
+      {showCustomTime && timeError && <p className="time-error">시간을 다시 입력해 주세요. 예: 08:30</p>}
 
       <button className={`save-btn ${!isValid ? 'off' : ''}`} onClick={() => void submit()} disabled={!isValid || saving}>
         {saving ? '저장 중...' : submitLabel}

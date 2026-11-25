@@ -161,6 +161,7 @@ input::placeholder { color: #9ca3af; }
 .time-chip.dis .tc-label, .time-chip.dis .tc-time { color: #9ca3af; }
 .custom-time-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .custom-time-row .f-input { margin-bottom: 0; }
+.time-error { margin: -6px 0 12px; font-size: calc(13px * var(--f)); color: #ef4444; font-weight: 600; }
 .custom-time-add { background: var(--green); border-radius: 10px; padding: 11px 18px; font-size: calc(14px * var(--f)); font-weight: 700; color: #fff; }
 .save-btn { display: block; width: 100%; background: var(--green); border-radius: 14px; padding: 15px 0; font-size: calc(16px * var(--f)); font-weight: 700; color: #fff; }
 .save-btn.off { background: #d1d5db; }

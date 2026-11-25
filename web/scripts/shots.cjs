@@ -164,6 +164,30 @@ function seed(opts) {
   console.log(tline);
   report.push(tline);
   await snap('07b-quick-add-custom-time');
+  // 7c) 3자리 830 → 8:30 → 08:30, 틀린 값(2575)은 '예: 08:30' 안내 (슬롯이 1개 남아 칩을 빼 가며 본다)
+  await clickText('08:30', '.time-chip');
+  await clickText('+ 추가', '.time-chip');
+  await p.type('.custom-time-row input', '830');
+  const typed3 = await p.$eval('.custom-time-row input', (e) => e.value);
+  await clickText('추가', '.custom-time-add');
+  await clickText('08:30', '.time-chip');
+  await clickText('+ 추가', '.time-chip');
+  await p.type('.custom-time-row input', '2575');
+  await clickText('추가', '.custom-time-add');
+  const hint = await p.evaluate(() => document.querySelector('.time-error')?.textContent ?? '(안내 없음)');
+  const chips2 = await p.$$eval('.time-chip.sel .tc-time', (es) => es.map((e) => e.textContent));
+  const t3 = `  직접 입력 830 → "${typed3}" · 2575 → ${hint} · 칩 ${JSON.stringify(chips2)}`;
+  console.log(t3);
+  report.push(t3);
+  await snap('07c-custom-time-error');
+  // 7d) 시간 해석 표(붙여넣기 값 포함)
+  const table = await p.evaluate(async () => {
+    const m = await import('/src/PillForm.tsx');
+    const xs = ['0830', '830', '8:30', '08:30', '8시30분', '8시 5분', '8.30', '8시', '2575', '08:3', '8'];
+    return xs.map((x) => `${x}→${m.formatTimeInput(x)}→${m.normalizeTime(m.formatTimeInput(x))}`).join(' | ');
+  });
+  console.log('  ' + table);
+  report.push('  ' + table);
 
   // 8) 슬롯 꽉참
   await load({ pills: PILLS });

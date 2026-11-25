@@ -144,6 +144,16 @@ export function PillProvider({ children }: { children: ReactNode }) {
     return ok;
   };
 
+  /**
+   * 그날 기록 — 영양제 목록 저장이 끝난 뒤 따라 쓰는 기록. 실패해도 화면에는 반영하고 성공으로 본다:
+   * 다음에 열 때 buildRecord 가 목록에서 빠진 칸을 다시 만들고 지운 영양제 칸을 걸러 낸다.
+   * (목록은 저장됐는데 false 를 돌려주면 다시 눌러 같은 영양제가 두 번 들어가고 슬롯이 두 번 빠진다 — 재검증 N3)
+   */
+  const persistRecordLoose = async (record: DailyRecord): Promise<void> => {
+    await writeKey(RECORD_KEY(record.date), JSON.stringify(record));
+    if (record.date === currentDay()) setRecordBoth(record);
+  };
+
   const persistMax = async (next: number): Promise<boolean> => {
     const ok = await writeKey(MAX_SLOTS_KEY, JSON.stringify(next));
     if (ok) setMaxBoth(next);
@@ -158,7 +168,8 @@ export function PillProvider({ children }: { children: ReactNode }) {
     const newPill: Pill = { ...pill, id: generateId() };
     if (!(await persistPills([...pillsRef.current, newPill]))) return false;
     const newIntakes = newPill.times.map((t) => ({ pillId: newPill.id, pillName: newPill.name, time: t, taken: false }));
-    return persistRecord({ ...base, intakes: [...base.intakes, ...newIntakes] });
+    await persistRecordLoose({ ...base, intakes: [...base.intakes, ...newIntakes] });
+    return true;
   };
 
   const updatePill = async (pill: Pill) => {
@@ -171,7 +182,8 @@ export function PillProvider({ children }: { children: ReactNode }) {
       const existing = base.intakes.find((i) => i.pillId === pill.id && i.time === t);
       return existing ? { ...existing, pillName: pill.name } : { pillId: pill.id, pillName: pill.name, time: t, taken: false };
     });
-    return persistRecord({ ...base, intakes: [...otherIntakes, ...pillIntakes] });
+    await persistRecordLoose({ ...base, intakes: [...otherIntakes, ...pillIntakes] });
+    return true;
   };
 
   const deletePill = async (id: string) => {
@@ -180,12 +192,10 @@ export function PillProvider({ children }: { children: ReactNode }) {
     const target = pillsRef.current.find((p) => p.id === id);
     const removedSlots = target?.times.length ?? 1;
     const nextMax = Math.max(DEFAULT_MAX_SLOTS, maxSlotsRef.current - removedSlots);
-    const r = await Promise.all([
-      persistPills(pillsRef.current.filter((p) => p.id !== id)),
-      persistRecord({ ...base, intakes: base.intakes.filter((i) => i.pillId !== id) }),
-      persistMax(nextMax),
-    ]);
-    return r.every(Boolean);
+    // 목록 저장이 성패를 가른다. 그날 기록·슬롯 수는 따라 쓰는 값(슬롯 수가 못 줄면 유저에게 한 칸 남을 뿐)
+    if (!(await persistPills(pillsRef.current.filter((p) => p.id !== id)))) return false;
+    await Promise.all([persistRecordLoose({ ...base, intakes: base.intakes.filter((i) => i.pillId !== id) }), persistMax(nextMax)]);
+    return true;
   };
 
   const toggleIntake = async (pillId: string, time: string) => {
@@ -205,7 +215,8 @@ export function PillProvider({ children }: { children: ReactNode }) {
       pill.times.map((time) => ({ pillId: pill.id, pillName: pill.name, time, taken: false })),
     );
     if (!(await persistPills(newPills))) return false;
-    return persistRecord({ date: today, intakes: newIntakes });
+    await persistRecordLoose({ date: today, intakes: newIntakes });
+    return true;
   };
 
   return (
