@@ -7,14 +7,14 @@
  * 알림 줄(형님 11/25 지시): 아직 동의하지 않은 유저에게 **항상** 보인다(RN 8f96bbb 는 도장 버튼이 없을 때만).
  * 도장 버튼이 있으면 그 바로 아래 한 줄. 동의하면 숨김. 거절·오류면 이번 방문만 숨김(다음에 열면 다시 보인다).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ImageAd, TopBanner } from '../AdSlot';
 import { DevPanel } from '../DevPanel';
 import { useAsk } from '../dialog';
 import { AD_IDS, DAILY_AMOUNT, NOTIFY_STATE_KEY, NOTIFY_TEMPLATE_CODE, STREAK_AMOUNT } from '../domain/config';
 import type { Pill } from '../domain/types';
 import { dayNameOf } from '../domain/utils';
-import { notifySupported, requestAgreement, writeKey } from '../lib/platform';
+import { grantSupported, notifySupported, requestAgreement, writeKey } from '../lib/platform';
 import { PillForm, Sheet, type PillInput } from '../PillForm';
 import { AddTile, PillTile } from '../PillTile';
 import { SlotFullModal } from '../SlotModal';
@@ -49,6 +49,15 @@ export function Home({
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [notifyHidden, setNotifyHidden] = useState(false);
   const canNotify = useMemo(() => notifySupported(), []);
+  // 동의 창에서 답 없이 돌아오면(화면 복귀) '잠시만요…'를 풀어 준다(교차 검증 m6)
+  useEffect(() => {
+    if (!notifyBusy) return;
+    const onVis = () => {
+      if (document.visibilityState === 'visible') window.setTimeout(() => setNotifyBusy(false), 1500);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [notifyBusy]);
   const askNotify = async () => {
     if (notifyBusy) return;
     setNotifyBusy(true);
@@ -110,7 +119,10 @@ export function Home({
       }
       return;
     }
-    await addPill(v);
+    if (!(await addPill(v))) {
+      void ask('저장하지 못했어요', '잠시 후 다시 시도해 주세요.');
+      return;
+    }
     setShowQuickAdd(false);
   };
 
@@ -128,14 +140,17 @@ export function Home({
   const takenCount = activeIntakes.filter((i) => i.taken).length;
   const totalCount = activeIntakes.length;
   const progress = totalCount > 0 ? takenCount / totalCount : 0;
-  const allDone = totalCount > 0 && takenCount === totalCount;
   const today = stamp.today;
+  // 자정을 넘겨 기록을 바꿔 끼우기 전(어제 기록)이면 '다 먹음'으로 보지 않는다(교차 검증 m2)
+  const allDone = totalCount > 0 && takenCount === totalCount && todayRecord.date === today;
 
   const sortedIntakes = useMemo(() => [...activeIntakes].sort((a, b) => a.time.localeCompare(b.time)), [activeIntakes]);
 
   // 오늘 도장 버튼: 복용 체크를 다 했고 오늘 도장이 없을 때. 광고를 못 띄우는 환경이면 숨긴다(광고 없이 지급 없음).
-  const showDailyAdBtn = allDone && !todayStamped && ad.supported;
-  const showStreakAdBtn = canEarnStreak && !dailyPending && ad.supported;
+  // 프로모션 지급을 지원하지 않는 토스 앱이면 도장·지급 버튼을 모두 숨긴다(교차 검증 m5)
+  const canPay = useMemo(() => grantSupported(), []);
+  const showDailyAdBtn = canPay && allDone && !todayStamped && ad.supported;
+  const showStreakAdBtn = canPay && canEarnStreak && !dailyPending && ad.supported;
   // 숫자로 나눠 만든다(Hermes 'YYYY/MM/DD' 파싱 결함 5f0713d 와 같은 방식)
   const dayName = dayNameOf(today);
 
@@ -155,7 +170,7 @@ export function Home({
             onEarnedDaily,
           ),
       }
-    : dailyPending
+    : canPay && dailyPending
       ? { label: `🏅 도장 눌러서 ${DAILY_AMOUNT}원 받기`, disabled: paying, gold: false, onPress: () => void onClaimDaily() }
       : showStreakAdBtn
         ? {
@@ -172,7 +187,7 @@ export function Home({
                 onEarnedStreak,
               ),
           }
-        : streakPending
+        : canPay && streakPending
           ? { label: `🏆 7일 도장 눌러서 ${STREAK_AMOUNT}원 받기`, disabled: paying, gold: true, onPress: () => void onClaimStreak() }
           : null;
 
@@ -235,7 +250,7 @@ export function Home({
         {/* 매일 오전 9시 알림 — 동의 전 유저에게 항상(도장 버튼이 있으면 그 바로 아래 한 줄) */}
         {showNotify && (
           <div className="notify-row">
-            <span className="notify-text">⏰ 매일 오전 9시 영양제 알림</span>
+            <span className="notify-text">⏰ 매일 오전 9시 알림</span>
             <button className={`notify-btn ${notifyBusy ? 'off' : ''}`} onClick={() => void askNotify()} disabled={notifyBusy}>
               {notifyBusy ? '잠시만요…' : '알림 받기'}
             </button>

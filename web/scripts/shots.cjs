@@ -154,6 +154,16 @@ function seed(opts) {
   await load({ pills: PILLS.slice(0, 2) });
   await clickText('추가', '.tile-cell');
   await snap('07-quick-add');
+  // 7b) 직접 입력 시간: 숫자 4자리 → 08:30 자동, 붙여넣기 8:30 → 08:30 으로 추가
+  await clickText('+ 추가', '.time-chip');
+  await p.type('.custom-time-row input', '0830');
+  const typed = await p.$eval('.custom-time-row input', (e) => e.value);
+  await clickText('추가', '.custom-time-add');
+  const chips = await p.$$eval('.time-chip.sel .tc-time', (es) => es.map((e) => e.textContent));
+  const tline = `  직접 입력 0830 → 입력칸 "${typed}" → 추가된 칩 ${JSON.stringify(chips)}`;
+  console.log(tline);
+  report.push(tline);
+  await snap('07b-quick-add-custom-time');
 
   // 8) 슬롯 꽉참
   await load({ pills: PILLS });

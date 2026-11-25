@@ -26,8 +26,11 @@ export function Manage() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [formKey, setFormKey] = useState(0);
 
+  /** 저장 실패 — 시트는 그대로 두고 알린다(교차 검증 m1) */
+  const saveFailed = () => void ask('저장하지 못했어요', '잠시 후 다시 시도해 주세요.');
+
   const handleAddSave = async (v: PillInput) => {
-    await addPill(v);
+    if (!(await addPill(v))) return saveFailed();
     setShowQuickAdd(false);
   };
 
@@ -50,11 +53,14 @@ export function Manage() {
       true,
     );
     if (!ok) return;
+    let saved: boolean;
     if (isLastSlot) {
-      await deletePill(pill.id);
+      saved = await deletePill(pill.id);
     } else {
-      await Promise.all([updatePill({ ...pill, times: pill.times.filter((t) => t !== time) }), decreaseSlot()]);
+      const r = await Promise.all([updatePill({ ...pill, times: pill.times.filter((t) => t !== time) }), decreaseSlot()]);
+      saved = r.every(Boolean);
     }
+    if (!saved) saveFailed();
   };
 
   // --- 수정 시트 ---
@@ -69,7 +75,7 @@ export function Manage() {
       return;
     }
     const newTimes = [...editing.pill.times.filter((t) => t !== editing.time), ...v.times].sort();
-    await updatePill({ ...editing.pill, ...v, times: newTimes });
+    if (!(await updatePill({ ...editing.pill, ...v, times: newTimes }))) return saveFailed();
     setEditing(null);
   };
 

@@ -64,6 +64,8 @@ export function PresetView() {
   const planAvailableSlots = planMaxSlots - planUsedSlots;
 
   const notReady = () => void ask('광고 준비 중이에요', '잠시 후 다시 시도해주세요.');
+  /** 저장 실패 — 창·빌더는 그대로 두고 알린다(교차 검증 m1) */
+  const saveFailed = () => void ask('저장하지 못했어요', '잠시 후 다시 시도해 주세요.');
 
   /** 광고 끝까지 본 뒤 callback. 안내 창을 먼저 띄운다 */
   const playAdThen = (callback: () => void | Promise<void>, guide?: AdGuide) => {
@@ -100,6 +102,7 @@ export function PresetView() {
   const handleConfirmSave = () => {
     const name = saveName.trim();
     if (!name) return;
+    if (!adLoaded) return; // 시트를 닫지 않는다(m7)
     setShowSaveModal(false);
     playDirect(async () => {
       setSaving(true);
@@ -109,6 +112,7 @@ export function PresetView() {
       );
       setSaving(false);
       if (ok) void ask('저장 완료!', `"${name}" 플랜이 저장됐어요.`);
+      else saveFailed();
     });
   };
 
@@ -160,6 +164,7 @@ export function PresetView() {
     }
     setPlanSaving(false);
     if (ok) setShowPlanBuilder(false);
+    else saveFailed();
   };
 
   const handleIncreasePlanSlot = () => {
@@ -206,12 +211,14 @@ export function PresetView() {
   // ── 요일 배정 (광고 필요) ──
   const handleToggleDay = (day: number, presetId: string) => {
     if (daySchedule[day] === presetId) {
-      void unassignDay(day);
+      void unassignDay(day).then((ok) => {
+        if (!ok) saveFailed();
+      });
       return;
     }
     playAdThen(
       async () => {
-        await assignDay(day, presetId);
+        if (!(await assignDay(day, presetId))) saveFailed();
       },
       { title: '요일 자동 제안', message: '짧은 광고를 보고 이 요일에 플랜을 자동으로 제안받을 수 있어요.', confirm: '광고 보고 설정' },
     );
@@ -415,7 +422,12 @@ export function PresetView() {
           onKeyDown={(e) => e.key === 'Enter' && handleConfirmSave()}
           autoFocus
         />
-        <button className={`confirm-btn ${!saveName.trim() ? 'off' : ''}`} onClick={handleConfirmSave} disabled={!saveName.trim()}>
+        {/* 광고가 준비되기 전에는 누를 수 없다 — 눌러서 시트만 닫히고 아무 일도 없는 일을 막는다(교차 검증 m7) */}
+        <button
+          className={`confirm-btn ${!saveName.trim() || !adLoaded ? 'off' : ''}`}
+          onClick={handleConfirmSave}
+          disabled={!saveName.trim() || !adLoaded}
+        >
           {adLoaded ? '광고 보고 저장' : '광고 준비 중...'}
         </button>
       </Sheet>

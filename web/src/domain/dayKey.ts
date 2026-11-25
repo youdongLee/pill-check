@@ -31,6 +31,9 @@ export function useDayKey(): string {
       if (document.visibilityState === 'visible') refresh();
     };
     document.addEventListener('visibilitychange', onVis);
+    // 웹뷰가 화면을 다시 보여 줄 때 visibilitychange 가 안 오는 경우가 있어 pageshow·focus 도 받는다
+    window.addEventListener('pageshow', refresh);
+    window.addEventListener('focus', refresh);
     let timer = 0;
     const arm = () => {
       const now = new Date();
@@ -44,6 +47,8 @@ export function useDayKey(): string {
     return () => {
       listeners.delete(refresh);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pageshow', refresh);
+      window.removeEventListener('focus', refresh);
       window.clearTimeout(timer);
     };
   }, []);

@@ -29,7 +29,8 @@ const LIVE_PROMO = {
 /**
  * 🧪 테스트 번들에서는 매일 1원만 TEST_ 코드로 부른다.
  * RN 5f0713d: "TEST_ 코드는 시작 전(SCHEDULED) 프로모션에만 통한다. 8133 은 이미 RUNNING 이라 그대로 둔다."
- * → 테스트 번들에서도 7일 10원은 운영 코드(실제 지급)다. RN 동작 그대로.
+ * RN 은 테스트 번들에서도 7일 10원을 운영 코드로 실제 지급했다 → 웹 🧪 번들은 7일 지급 호출을 건너뛴다
+ *   (로그 + 토스트만, StampContext claimStreak — 교차 검증 m3). 출시 번들은 운영 코드로 정상 지급.
  * 출시 번들에서는 TEST_MODE 가 상수 false 라 TEST_ 글자가 번들에 남지 않는다.
  */
 export const PROMO = TEST_MODE ? { daily: `TEST_${LIVE_PROMO.daily}`, streak: LIVE_PROMO.streak } : LIVE_PROMO;

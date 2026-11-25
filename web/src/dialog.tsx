@@ -3,7 +3,7 @@
  * ask(제목, 본문, 확인 글자, 취소 글자?, 위험?) → 확인이면 true. 한 번에 하나만 뜬다.
  * 뒤로가기·바깥 누름 = 취소.
  */
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLayer } from './lib/nav';
 
 interface DialogSpec {
@@ -19,8 +19,26 @@ export type Ask = (title: string, body?: string, ok?: string, cancel?: string, d
 
 const C = createContext<Ask | null>(null);
 
+/** 잠깐 떴다 사라지는 한 줄(🧪 테스트 안내용) */
+let pushToast: ((t: string) => void) | null = null;
+export function showToast(t: string): void {
+  pushToast?.(t);
+}
+
 export function DialogProvider({ children }: { children: ReactNode }) {
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    pushToast = setToast;
+    return () => {
+      pushToast = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (toast == null) return;
+    const id = window.setTimeout(() => setToast(null), 2400);
+    return () => window.clearTimeout(id);
+  }, [toast]);
   const cur = useRef<DialogSpec | null>(null);
 
   const close = useCallback((v: boolean) => {
@@ -69,6 +87,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           </div>
         </div>
       )}
+      {toast && <div className="toast">{toast}</div>}
     </C.Provider>
   );
 }

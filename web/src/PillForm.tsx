@@ -17,6 +17,28 @@ const UNITS = ['알', 'mg', 'ml'];
 
 export type PillInput = Omit<Pill, 'id'>;
 
+/**
+ * 직접 입력 시간 — 숫자 키패드에는 ':' 가 없어(웹 inputMode=numeric) 숫자 4자리를 받으면 두 자리 뒤에 ':' 를 넣는다(0830 → 08:30).
+ * ':' 를 직접 치거나 붙여넣은 값(8:30·08:30)도 받는다.
+ */
+export function formatTimeInput(raw: string): string {
+  const s = raw.replace(/[^\d:]/g, '');
+  if (s.includes(':')) return s.slice(0, 5);
+  const d = s.slice(0, 4);
+  return d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
+}
+
+/** 'H:MM'·'HH:MM'·'HHMM' → 'HH:MM'(00:00~23:59). 아니면 null */
+export function normalizeTime(raw: string): string | null {
+  const s = raw.trim();
+  const m = /^(\d{1,2}):?(\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return `${String(h).padStart(2, '0')}:${m[2]}`;
+}
+
 export function PillForm({
   initial,
   initialTimes,
@@ -53,8 +75,8 @@ export function PillForm({
   const toggleTime = (t: string) => setTimes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
 
   const addCustomTime = () => {
-    const t = customTime.trim();
-    if (!/^\d{2}:\d{2}$/.test(t)) return;
+    const t = normalizeTime(customTime);
+    if (!t) return;
     if (times.includes(t)) {
       setCustomTime('');
       setShowCustomTime(false);
@@ -203,7 +225,11 @@ export function PillForm({
             className="f-input grow"
             placeholder="HH:MM"
             value={customTime}
-            onChange={(e) => setCustomTime(e.target.value)}
+            onChange={(e) => setCustomTime(formatTimeInput(e.target.value))}
+            onPaste={(e) => {
+              e.preventDefault();
+              setCustomTime(formatTimeInput(e.clipboardData.getData('text')));
+            }}
             maxLength={5}
             inputMode="numeric"
             enterKeyHint="done"

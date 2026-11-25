@@ -26,7 +26,8 @@ import {
   type StampView,
 } from '../domain/stampCore';
 import { currentDay, useDayKey } from '../domain/dayKey';
-import { TIMEOUT, grantReward, readKey, writeKey } from '../lib/platform';
+import { TEST_MODE, TIMEOUT, grantLog, grantReward, readKey, writeKey } from '../lib/platform';
+import { showToast } from '../dialog';
 import type { LoadStatus } from './PillContext';
 
 // 라이브와 같은 키 — 기존 유저의 도장·연속이 그대로 이어진다
@@ -134,12 +135,20 @@ export function StampProvider({ children }: { children: ReactNode }) {
     return ok;
   };
 
-  const claim = async (mark: typeof markDailyPaid, code: string, amount: number) => {
+  const claim = async (mark: typeof markDailyPaid, code: string, amount: number, liveOnlyCode = false) => {
     if (payingRef.current.busy) return false;
     setPaying(true);
     try {
       // 잠금 → 지급 기록 먼저(저장 확인) → 지급 호출 (실패해도 화면 안내 없음, 재시도 없음)
-      return await runClaim(payingRef.current, () => apply(mark), async () => (await grantReward(code, amount)).ok);
+      return await runClaim(payingRef.current, () => apply(mark), async () => {
+        // 🧪 7일 10원(8133)은 TEST_ 코드가 없어(RUNNING) 테스트 번들에서 부르면 실제 지급이 된다 → 건너뛴다(교차 검증 m3)
+        if (TEST_MODE && liveOnlyCode) {
+          grantLog.unshift(`${new Date().toTimeString().slice(0, 8)} ${code.slice(0, 12)} ${amount} SKIP(테스트 번들)`);
+          showToast(`테스트: ${amount}원 지급은 건너뛰어요`);
+          return false;
+        }
+        return (await grantReward(code, amount)).ok;
+      });
     } finally {
       setPaying(false);
     }
@@ -156,7 +165,7 @@ export function StampProvider({ children }: { children: ReactNode }) {
     earnDailyStamp: () => apply(earnDaily),
     earnStreakStamp: () => apply(earnStreak),
     claimDaily: () => claim(markDailyPaid, PROMO.daily, DAILY_AMOUNT),
-    claimStreak: () => claim(markStreakPaid, PROMO.streak, STREAK_AMOUNT),
+    claimStreak: () => claim(markStreakPaid, PROMO.streak, STREAK_AMOUNT, true),
     devSeedPast: async (days: number) => {
       const day = currentDay();
       const past: string[] = [];

@@ -317,10 +317,11 @@ export function showReward(): Promise<ShowResult> {
           if (e.type === 'dismissed') done(earned ? 'earned' : 'closed');
           if (e.type === 'failedToShow') done('noshow');
         },
-        onError: () => done('unavailable'),
+        // 끝까지 본 뒤 오류가 와도 보상은 준다(userEarnedReward 를 이미 받았으면)
+        onError: () => done(earned ? 'earned' : 'unavailable'),
       });
     } catch {
-      done('unavailable');
+      done(earned ? 'earned' : 'unavailable');
     }
   });
 }
@@ -335,6 +336,16 @@ export const grantLog: string[] = [];
 function glog(line: string) {
   grantLog.unshift(`${new Date().toTimeString().slice(0, 8)} ${line}`);
   if (grantLog.length > 10) grantLog.length = 10;
+}
+
+/** 이 토스 앱이 프로모션 지급을 지원하는가 — 아니면 도장·지급 버튼을 숨긴다(RN 의 광고 미지원 때와 같이) */
+export function grantSupported(): boolean {
+  if (MOCK) return true;
+  try {
+    return Promotion.grantReward.isSupported();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -392,9 +403,12 @@ export function requestAgreement(templateCode: string): Promise<AgreementResult>
     }
     let done = false;
     let cleanup: (() => void) | undefined;
+    // 동의 창이 끝내 답하지 않으면 60초 뒤 오류로 끝낸다(버튼이 '잠시만요…'에 묶이지 않게)
+    const safety = window.setTimeout(() => finish('error'), 60_000);
     const finish = (r: AgreementResult) => {
       if (done) return;
       done = true;
+      window.clearTimeout(safety);
       try {
         cleanup?.();
       } catch {

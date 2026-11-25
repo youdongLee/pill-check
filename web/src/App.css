@@ -76,9 +76,12 @@ input::placeholder { color: #9ca3af; }
 .action-btn { display: block; width: 100%; margin-top: 10px; padding: 11px 8px; border-radius: 12px; background: var(--green); color: #fff; font-size: calc(14px * var(--s)); font-weight: 700; }
 .action-btn.gold { background: #f59e0b; }
 .action-btn.off { background: #d1d5db; }
-.notify-row { display: flex; align-items: center; margin-top: 10px; gap: 10px; }
-.notify-text { flex: 1; min-width: 0; font-size: calc(14px * var(--s)); font-weight: 700; color: #111827; }
-.notify-btn { background: var(--green); border-radius: 10px; padding: 9px 12px; font-size: calc(14px * var(--s)); font-weight: 700; color: #fff; flex-shrink: 0; }
+/* 알림 줄 — 큰글씨에서도 한 줄 높이(글자 상한 1.2배, 줄바꿈 없음). 도장 버튼 바로 아래면 여백을 줄인다 */
+.notify-row { display: flex; align-items: center; margin-top: 10px; gap: 8px; white-space: nowrap; }
+.action-btn + .notify-row { margin-top: 6px; }
+.notify-text { flex: 1; min-width: 0; font-size: calc(14px * var(--c12)); font-weight: 700; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notify-btn { background: var(--green); border-radius: 10px; padding: 7px 12px; font-size: calc(14px * var(--c12)); font-weight: 700; color: #fff; flex-shrink: 0; white-space: nowrap; }
+.toast { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; max-width: calc(100% - 32px); background: rgba(17, 24, 39, 0.9); color: #fff; font-size: 14px; padding: 10px 16px; border-radius: 12px; text-align: center; }
 .notify-btn.off { background: #d1d5db; }
 .hint { font-size: calc(12px * var(--s)); color: #6b7280; text-align: center; margin-top: 8px; }
 .list-wrap { padding: 10px 12px 0; }
